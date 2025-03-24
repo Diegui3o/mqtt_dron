@@ -4,7 +4,6 @@
 #include "variables.h"
 #include "manual_mode.h"
 #include "mpu.h"
-#include "kalman_filter.h"
 
 void channelInterruptHandler()
 {
@@ -178,15 +177,11 @@ void setupManualmode(void)
   AccXCalibration = 0.03;
   AccYCalibration = 0.01;
   AccZCalibration = -0.07;
-
-  KalmanFilter kf(0.1, 1.0, 1.0, 0.0, 1.0); // Ajusta estos valores según sea necesario
-
   LoopTimer = micros();
 }
 
 void loopManualmode(void)
 {
-
   complementaryAngleRoll = 0.991 * (complementaryAngleRoll + RateRoll * t) + 0.009 * AngleRoll;
   complementaryAnglePitch = 0.991 * (complementaryAnglePitch + RatePitch * t) + 0.009 * AnglePitch;
   // Clamping complementary filter roll angle to ±20 degrees
