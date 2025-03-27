@@ -150,6 +150,9 @@ void gyro_signals(void)
   // Aplicar el filtro de Kalman
   kalmanUpdateRoll(accAngleRoll, gyroRateRoll, 0.01);
   kalmanUpdatePitch(accAnglePitch, gyroRatePitch);
+  
+  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 57.29;
+  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 57.29;
 
   AngleRoll = x_roll[0];
   AnglePitch = x_pitch[0];

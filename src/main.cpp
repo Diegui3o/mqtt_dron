@@ -6,32 +6,31 @@
 #include "variables.h"
 #include "mpu.h"
 #include "manual_mode.h"
-#include <ArduinoJson.h>
 #include <data.h>
 #include <Wire.h>
-#include "I2Cdev.h"
-#include "MPU6050.h"
-#include "variables.h"
-#include "mpu.h"
 #include "piloto_mode.h"
-#include <ESP32Servo.h>
-#include <VL53L0X.h>
 
+// Variables compartidas entre núcleos (volatile para sincronización)
+volatile bool ledState = false;
+volatile bool motorState = false;
+volatile int modoActual = 1;
+volatile bool modoCambiado = false;
+
+// Objetos globales
 WiFiClient espClient;
 PubSubClient client(espClient);
 Preferences preferences;
+TaskHandle_t Task1;
 
-int modo;
-bool ledState;
-bool motorState;
-int modoActual;
-
+// Prototipos de funciones
 void setup_wifi();
 void reconnect();
 void callback(char *topic, byte *payload, unsigned int length);
 void handleControlMessage(const String &message);
 void handleModeMessage(const String &message);
+void Task1code(void *pvParameters); // Función para el núcleo 1
 
+// Configuración WiFi (igual que antes)
 void setup_wifi()
 {
     Serial.print("Conectando a ");
@@ -45,6 +44,7 @@ void setup_wifi()
     Serial.println("\n✅ WiFi conectado. IP: " + WiFi.localIP().toString());
 }
 
+// Reconexión MQTT (igual que antes)
 void reconnect()
 {
     while (!client.connected())
@@ -68,6 +68,7 @@ void reconnect()
     }
 }
 
+// Callback MQTT (modificado para solo manejar mensajes)
 void callback(char *topic, byte *payload, unsigned int length)
 {
     Serial.print("📩 Mensaje recibido en ");
@@ -79,7 +80,6 @@ void callback(char *topic, byte *payload, unsigned int length)
     {
         message += (char)payload[i];
     }
-
     Serial.println(message);
 
     if (strcmp(topic, mqtt_control) == 0)
@@ -92,37 +92,33 @@ void callback(char *topic, byte *payload, unsigned int length)
     }
 }
 
+// Manejo de mensajes de control (modificado para solo actualizar variables)
 void handleControlMessage(const String &message)
 {
     if (message == "ON_LED")
     {
-        digitalWrite(pinLed, HIGH);
         ledState = true;
     }
     else if (message == "OFF_LED")
     {
-        digitalWrite(pinLed, LOW);
         ledState = false;
     }
-    if (message == "ON_MOTORS")
+    else if (message == "ON_MOTORS")
     {
-
-        encenderMotores(1500);
         motorState = true;
     }
     else if (message == "OFF_MOTORS")
     {
-        apagarMotores();
         motorState = false;
     }
     preferences.putBool("ledState", ledState);
 }
 
+// Manejo de mensajes de modo (modificado para solo actualizar variables)
 void handleModeMessage(const String &message)
 {
     int nuevoModo;
 
-    // Verificar si el mensaje es un JSON o solo un número
     if (message.charAt(0) == '{')
     {
         DynamicJsonDocument doc(256);
@@ -134,38 +130,77 @@ void handleModeMessage(const String &message)
         nuevoModo = message.toInt();
     }
 
-    if (nuevoModo == modoActual)
+    if (nuevoModo != modoActual)
+    {
+        modoActual = nuevoModo;
+        modoCambiado = true;
+        Serial.printf("✅ Modo cambiado a: %d\n", modoActual);
+    }
+    else
     {
         Serial.println("🔄 Modo recibido es el mismo que el actual.");
-        return;
     }
+}
 
-    // Cambiar el modo y ejecutar la acción correspondiente
-    modoActual = nuevoModo;
-    Serial.printf("✅ Modo cambiado a: %d\n", modoActual);
+// Tarea que corre en el núcleo 1 (manejo de modos y actuadores)
+void Task1code(void *pvParameters)
+{
+    Serial.print("Task1 running on core ");
+    Serial.println(xPortGetCoreID());
 
-    switch (modoActual)
+    for (;;)
     {
-    case 0:
-        Serial.println("🔴 Modo 0");
-        setup_pilote_mode();
-        while (modoActual == 0)
+        // Control del LED
+        digitalWrite(pinLed, ledState ? HIGH : LOW);
+
+        // Control de motores
+        if (motorState)
         {
-            loop_pilote_mode();
+            encenderMotores(1500);
+        }
+        else
+        {
+            apagarMotores();
         }
 
-        break;
-    case 1:
-        Serial.println("🟡 Modo 1");
-        // Código para estado de espera
-        break;
-    case 2:
-        Serial.println("🟢 Modo 2");
-        // Código para apagar motores
-        break;
-    default:
-        Serial.println("⚠️ Modo desconocido.");
-        break;
+        // Manejo de modos
+        switch (modoActual)
+        {
+        case 0:
+            if (modoCambiado)
+            {
+                Serial.println("🔴 Modo 0 - Piloto");
+                setup_pilote_mode();
+                modoCambiado = false;
+            }
+            loop_pilote_mode();
+            break;
+        case 1:
+            if (modoCambiado)
+            {
+                Serial.println("🟡 Modo 1 - Espera");
+                modoCambiado = false;
+            }
+            // Código para estado de espera
+            break;
+        case 2:
+            if (modoCambiado)
+            {
+                Serial.println("🟢 Modo 2 - Apagado");
+                modoCambiado = false;
+            }
+            // Código para apagar motores
+            break;
+        default:
+            if (modoCambiado)
+            {
+                Serial.println("⚠️ Modo desconocido.");
+                modoCambiado = false;
+            }
+            break;
+        }
+
+        delay(10); // Pequeña pausa para evitar saturación
     }
 }
 
@@ -175,19 +210,32 @@ void setup()
     pinMode(pinLed, OUTPUT);
 
     preferences.begin("dronData", false);
-    modo = preferences.getInt("modo", 1);
+    modoActual = preferences.getInt("modo", 1);
     ledState = preferences.getBool("ledState", false);
     digitalWrite(pinLed, ledState ? HIGH : LOW);
 
     Serial.print("🔄 Estado restaurado: Modo = ");
-    Serial.print(modo);
+    Serial.print(modoActual);
     Serial.print(", LED = ");
     Serial.println(ledState ? "ON" : "OFF");
+
     setupMotores();
     setupMPU();
     setup_wifi();
+
     client.setServer(mqttServer, mqtt_port);
     client.setCallback(callback);
+
+    // Crear tarea para el núcleo 1
+    xTaskCreatePinnedToCore(
+        Task1code, // Función de la tarea
+        "Task1",   // Nombre de la tarea
+        10000,     // Tamaño del stack
+        NULL,      // Parámetros
+        1,         // Prioridad
+        &Task1,    // Handle de la tarea
+        1          // Núcleo (1)
+    );
 }
 
 void loop()
@@ -208,12 +256,11 @@ void loop()
     char anglesBuffer[200];
     size_t anglesLen = serializeJson(anglesDoc, anglesBuffer);
     client.publish(mqtt_topic_angles, anglesBuffer, anglesLen);
-    Serial.println(x_roll[0]);
 
     // Publicar tasas
     StaticJsonDocument<200> ratesDoc;
-    ratesDoc["RateRoll"] = gyroRateRoll;
-    ratesDoc["RatePitch"] = gyroRatePitch;
+    ratesDoc["RateRoll"] = RateRoll;
+    ratesDoc["RatePitch"] = RatePitch;
     ratesDoc["RateYaw"] = RateYaw;
     char ratesBuffer[200];
     size_t ratesLen = serializeJson(ratesDoc, ratesBuffer);

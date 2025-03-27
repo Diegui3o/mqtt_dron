@@ -54,8 +54,8 @@ void loop_pilote_mode()
 
     for (int j = 0; j < 6; j++)
     {
-        tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi + Kc_at[0][3] * RateRoll;
-        tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta + Kc_at[1][4] * RatePitch;
+        tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi + Kc_at[0][3] * gyroRateRoll;
+        tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta + Kc_at[1][4] * gyroRatePitch;
         tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi + Kc_at[2][5] * RateYaw;
     }
 
@@ -70,10 +70,10 @@ void loop_pilote_mode()
 // === CONTROL A LOS MOTORES ===
 void applyControl(float tau_x, float tau_y, float tau_z)
 {
-    float pwm1 = 1500 - tau_x - tau_y - tau_z;
-    float pwm2 = 1500 - tau_x + tau_y + tau_z;
-    float pwm3 = 1500 + tau_x + tau_y - tau_z;
-    float pwm4 = 1500 + tau_x - tau_y + tau_z;
+    float pwm1 = 1350 - tau_x - tau_y - tau_z;
+    float pwm2 = 1350 - tau_x + tau_y + tau_z;
+    float pwm3 = 1350 + tau_x + tau_y - tau_z;
+    float pwm4 = 1350 + tau_x - tau_y + tau_z;
 
     // Limitar valores PWM
     MotorInput1 = constrain(pwm1, 1000, 2000);

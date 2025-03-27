@@ -126,4 +126,8 @@ extern const float DT;           // Paso de tiempo
 extern const uint32_t LOOP_US;   // Microsegundos por ciclo
 extern const int IDLE_PWM;
 
+extern volatile float tau_x;
+extern volatile float tau_y;
+extern volatile float tau_z;
+
 #endif // VARIABLES_H
