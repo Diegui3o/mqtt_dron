@@ -130,13 +130,8 @@ void gyro_signals(void)
   GyroYdps = GyroY / 131.0;
   GyroZdps = GyroZ / 131.0;
 
-<<<<<<< HEAD
   accAngleX = (atan(AccY / sqrt(pow(AccX, 2) + pow(AccZ, 2))) * 180 / PI) - 0.58;
   accAngleY = (atan(-1 * AccX / sqrt(pow(AccY, 2) + pow(AccZ, 2))) * 180 / PI) + 1.58;
-=======
-  AngleRoll = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 57.29;
-  AnglePitch = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 57.29;
->>>>>>> b1f65c3d56428ed493e4ce8dedd9ed69bd1c07f5
 
   if (AccZ != 0)
   {
@@ -155,12 +150,9 @@ void gyro_signals(void)
   // Aplicar el filtro de Kalman
   kalmanUpdateRoll(accAngleRoll, gyroRateRoll, 0.01);
   kalmanUpdatePitch(accAnglePitch, gyroRatePitch);
-<<<<<<< HEAD
 
   AngleRoll = x_roll[0];
   AnglePitch = x_pitch[0];
-=======
->>>>>>> b1f65c3d56428ed493e4ce8dedd9ed69bd1c07f5
 }
 
 void setupMPU()
