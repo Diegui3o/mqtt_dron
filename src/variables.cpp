@@ -62,16 +62,6 @@ const int channel_6_pin = 26;
 int ThrottleIdle = 1050;
 int ThrottleCutOff = 1000;
 
-<<<<<<< HEAD
-=======
-volatile float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
-volatile float ErrorRateRoll, ErrorRatePitch, ErrorRateYaw;
-volatile float InputRoll, InputThrottle, InputPitch, InputYaw;
-volatile float PrevErrorRateRoll, PrevErrorRatePitch, PrevErrorRateYaw;
-volatile float PrevItermRateRoll, PrevItermRatePitch, PrevItermRateYaw;
-volatile float PIDReturn[3] = {0, 0, 0};
-
->>>>>>> b1f65c3d56428ed493e4ce8dedd9ed69bd1c07f5
 // Kalman filters for angle mode
 volatile float AccX, AccY, AccZ;
 volatile float AngleRoll, AnglePitch, AngleYaw;
@@ -115,7 +105,6 @@ float C = 0.0;      // Measurement residual covariance
 float accAngleRoll;  // Ángulo de roll (grados)
 float accAnglePitch; // Ángulo de pitch (grados)
 float gyroRateRoll;  // Tasa de giro en grados/segundo
-<<<<<<< HEAD
 float gyroRatePitch;
 float accAngleY;
 float accAngleX;
@@ -125,6 +114,3 @@ const uint16_t LOOP_FREQ = 100;               // Frecuencia del loop en Hz
 const float DT = 1.0f / LOOP_FREQ;            // Paso de tiempo
 const uint32_t LOOP_US = 1000000 / LOOP_FREQ; // Microsegundos por ciclo
 const int IDLE_PWM = 1000;
-=======
-float gyroRatePitch;
->>>>>>> b1f65c3d56428ed493e4ce8dedd9ed69bd1c07f5
