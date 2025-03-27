@@ -9,28 +9,12 @@
 
 void setupMotores()
 {
-    ESP32PWM::allocateTimer(0);
-    ESP32PWM::allocateTimer(1);
-    ESP32PWM::allocateTimer(2);
-    ESP32PWM::allocateTimer(3);
-
-    mot1.setPeriodHertz(400); // Frecuencia PWM para ESCs
-    mot2.setPeriodHertz(400);
-    mot3.setPeriodHertz(400);
-    mot4.setPeriodHertz(400);
-
-    mot1.attach(mot1_pin, 1000, 2000);
-    mot2.attach(mot2_pin, 1000, 2000);
-    mot3.attach(mot3_pin, 1000, 2000);
-    mot4.attach(mot4_pin, 1000, 2000);
-
-    // Inicializar ESCs
-    mot1.writeMicroseconds(IDLE_PWM);
-    mot2.writeMicroseconds(IDLE_PWM);
-    mot3.writeMicroseconds(IDLE_PWM);
-    mot4.writeMicroseconds(IDLE_PWM);
-    delay(2000);
-    Serial.println("Motores inicializados");
+    mot1.attach(mot1_pin);
+    mot2.attach(mot2_pin);
+    mot3.attach(mot3_pin);
+    mot4.attach(mot4_pin);
+    Serial.println("Iniciando ESCs...");
+    delay(200);
 }
 
 void encenderMotores(int speed)

@@ -148,12 +148,16 @@ void handleModeMessage(const String &message)
     {
     case 0:
         Serial.println("🔴 Modo 0");
+<<<<<<< HEAD
         setup_pilote_mode();
         while (modoActual == 0)
         {
             loop_pilote_mode();
         }
 
+=======
+        // Código para activar motores
+>>>>>>> b1f65c3d56428ed493e4ce8dedd9ed69bd1c07f5
         break;
     case 1:
         Serial.println("🟡 Modo 1");
@@ -208,11 +212,12 @@ void loop()
     char anglesBuffer[200];
     size_t anglesLen = serializeJson(anglesDoc, anglesBuffer);
     client.publish(mqtt_topic_angles, anglesBuffer, anglesLen);
+    Serial.println(x_roll[0]);
 
     // Publicar tasas
     StaticJsonDocument<200> ratesDoc;
-    ratesDoc["RateRoll"] = RateRoll;
-    ratesDoc["RatePitch"] = RatePitch;
+    ratesDoc["RateRoll"] = gyroRateRoll;
+    ratesDoc["RatePitch"] = gyroRatePitch;
     ratesDoc["RateYaw"] = RateYaw;
     char ratesBuffer[200];
     size_t ratesLen = serializeJson(ratesDoc, ratesBuffer);
@@ -238,6 +243,7 @@ void loop()
 
     // Publicar ángulos de Kalman
     StaticJsonDocument<800> kalmanDoc;
+<<<<<<< HEAD
     kalmanDoc["KalmanAngleRoll"] = AngleRoll;
     kalmanDoc["KalmanAnglePitch"] = AnglePitch;
     kalmanDoc["complementaryAngleRoll"] = complementaryAngleRoll;
@@ -246,6 +252,16 @@ void loop()
     kalmanDoc["InputRoll"] = tau_y;
     kalmanDoc["InputPitch"] = tau_z;
     kalmanDoc["InputYaw"] = error_phi;
+=======
+    kalmanDoc["KalmanAngleRoll"] = x_roll[0];
+    kalmanDoc["KalmanAnglePitch"] = x_pitch[0];
+    kalmanDoc["complementaryAngleRoll"] = complementaryAngleRoll;
+    kalmanDoc["complementaryAnglePitch"] = complementaryAnglePitch;
+    kalmanDoc["InputThrottle"] = InputThrottle;
+    kalmanDoc["InputRoll"] = InputRoll;
+    kalmanDoc["InputPitch"] = InputPitch;
+    kalmanDoc["InputYaw"] = InputYaw;
+>>>>>>> b1f65c3d56428ed493e4ce8dedd9ed69bd1c07f5
     char kalmanBuffer[800];
     size_t kalmanLen = serializeJson(kalmanDoc, kalmanBuffer);
     client.publish(mqtt_topic_kalman, kalmanBuffer, kalmanLen);

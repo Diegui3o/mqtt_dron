@@ -117,6 +117,7 @@ extern float accAnglePitch; // Ángulo de pitch (grados)
 extern float gyroRateRoll;  // Tasa de giro en grados/segundo
 extern float gyroRatePitch;
 
+<<<<<<< HEAD
 extern float accAngleY;
 extern float accAngleX;
 
@@ -126,4 +127,6 @@ extern const float DT;           // Paso de tiempo
 extern const uint32_t LOOP_US;   // Microsegundos por ciclo
 extern const int IDLE_PWM;
 
+=======
+>>>>>>> b1f65c3d56428ed493e4ce8dedd9ed69bd1c07f5
 #endif // VARIABLES_H
