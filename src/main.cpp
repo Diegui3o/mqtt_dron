@@ -8,6 +8,14 @@
 #include "manual_mode.h"
 #include <ArduinoJson.h>
 #include <data.h>
+#include <Wire.h>
+#include "I2Cdev.h"
+#include "MPU6050.h"
+#include "variables.h"
+#include "mpu.h"
+#include "piloto_mode.h"
+#include <ESP32Servo.h>
+#include <VL53L0X.h>
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -15,6 +23,7 @@ Preferences preferences;
 
 int modo;
 bool ledState;
+bool motorState;
 int modoActual;
 
 void setup_wifi();
@@ -68,7 +77,7 @@ void callback(char *topic, byte *payload, unsigned int length)
     String message;
     for (unsigned int i = 0; i < length; i++)
     {
-        message += (char)payload[i]; // Construir el string correctamente
+        message += (char)payload[i];
     }
 
     Serial.println(message);
@@ -94,6 +103,17 @@ void handleControlMessage(const String &message)
     {
         digitalWrite(pinLed, LOW);
         ledState = false;
+    }
+    if (message == "ON_MOTORS")
+    {
+
+        encenderMotores(1500);
+        motorState = true;
+    }
+    else if (message == "OFF_MOTORS")
+    {
+        apagarMotores();
+        motorState = false;
     }
     preferences.putBool("ledState", ledState);
 }
@@ -127,15 +147,20 @@ void handleModeMessage(const String &message)
     switch (modoActual)
     {
     case 0:
-        Serial.println("🔴 Modo 0: Motores activados.");
-        // Código para activar motores
+        Serial.println("🔴 Modo 0");
+        setup_pilote_mode();
+        while (modoActual == 0)
+        {
+            loop_pilote_mode();
+        }
+
         break;
     case 1:
-        Serial.println("🟡 Modo 1: En espera.");
+        Serial.println("🟡 Modo 1");
         // Código para estado de espera
         break;
     case 2:
-        Serial.println("🟢 Modo 2: Motores apagados.");
+        Serial.println("🟢 Modo 2");
         // Código para apagar motores
         break;
     default:
@@ -150,7 +175,7 @@ void setup()
     pinMode(pinLed, OUTPUT);
 
     preferences.begin("dronData", false);
-    modo = preferences.getInt("modo", 1); // Asegúrate de que el modo se restaura correctamente
+    modo = preferences.getInt("modo", 1);
     ledState = preferences.getBool("ledState", false);
     digitalWrite(pinLed, ledState ? HIGH : LOW);
 
@@ -158,7 +183,7 @@ void setup()
     Serial.print(modo);
     Serial.print(", LED = ");
     Serial.println(ledState ? "ON" : "OFF");
-
+    setupMotores();
     setupMPU();
     setup_wifi();
     client.setServer(mqttServer, mqtt_port);
@@ -167,7 +192,7 @@ void setup()
 
 void loop()
 {
-    mpu_signals(); // Obtener datos del sensor
+    gyro_signals();
 
     if (!client.connected())
     {
@@ -177,8 +202,8 @@ void loop()
 
     // Publicar datos del MPU
     StaticJsonDocument<200> anglesDoc;
-    anglesDoc["AngleRoll"] = AngleRoll;
-    anglesDoc["AnglePitch"] = AnglePitch;
+    anglesDoc["AngleRoll"] = AngleRoll_est;
+    anglesDoc["AnglePitch"] = AnglePitch_est;
     anglesDoc["AngleYaw"] = AngleYaw;
     char anglesBuffer[200];
     size_t anglesLen = serializeJson(anglesDoc, anglesBuffer);
@@ -212,10 +237,16 @@ void loop()
     client.publish(mqtt_topic_gyro, gyroBuffer, gyroLen);
 
     // Publicar ángulos de Kalman
-    StaticJsonDocument<200> kalmanDoc;
-    kalmanDoc["KalmanAngleRoll"] = KalmanAngleRoll;
-    kalmanDoc["KalmanAnglePitch"] = KalmanAnglePitch;
-    char kalmanBuffer[200];
+    StaticJsonDocument<800> kalmanDoc;
+    kalmanDoc["KalmanAngleRoll"] = AngleRoll;
+    kalmanDoc["KalmanAnglePitch"] = AnglePitch;
+    kalmanDoc["complementaryAngleRoll"] = complementaryAngleRoll;
+    kalmanDoc["complementaryAnglePitch"] = complementaryAnglePitch;
+    kalmanDoc["InputThrottle"] = tau_x;
+    kalmanDoc["InputRoll"] = tau_y;
+    kalmanDoc["InputPitch"] = tau_z;
+    kalmanDoc["InputYaw"] = error_phi;
+    char kalmanBuffer[800];
     size_t kalmanLen = serializeJson(kalmanDoc, kalmanBuffer);
     client.publish(mqtt_topic_kalman, kalmanBuffer, kalmanLen);
 
