@@ -64,7 +64,7 @@ int ThrottleCutOff = 1000;
 
 // Kalman filters for angle mode
 volatile float AccX, AccY, AccZ;
-volatile float AngleRoll, AnglePitch, AngleYaw;
+volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0;
 volatile float GyroXdps, GyroYdps, GyroZdps;
 volatile float DesiredAngleRoll, DesiredAnglePitch;
 volatile float ErrorAngleRoll, ErrorAnglePitch;
@@ -86,21 +86,17 @@ float integral_psi = 0.0;
 
 // Estado estimado: [ángulo, sesgo]
 float dt = 0.05;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
-float Q_angle = 0.001; // Covarianza del ruido del proceso (ángulo)
-float Q_gyro = 0.003;  // Covarianza del ruido del proceso (giroscopio)
-float R_angle = 0.03;  // Covarianza del ruido de medición (acelerómetro)
+float Q_angle = 0.0001; // Covarianza del ruido del proceso (ángulo)
+float Q_gyro = 0.001;  // Covarianza del ruido del proceso (giroscopio)
+float R_angle = 0.1;  // Covarianza del ruido de medición (acelerómetro)
 
 // Estado y matrices de covarianza para roll
 volatile float x_roll[2] = {0, 0};     // [ángulo, bias_del_giroscopio]
 float P_roll[2][2] = {{1, 0}, {0, 1}}; // Matriz de covarianza del error
 
 // Estado y matrices de covarianza para pitch
-volatile float x_pitch[2] = {0, 0};     // [ángulo, bias_del_giroscopio]
+volatile float x_pitch[2] = {0, 0};      // [ángulo, bias_del_giroscopio]
 float P_pitch[2][2] = {{1, 0}, {0, 1}}; // Matriz de covarianza del error
-
-// Variables para el FFAKF
-float lambda = 1.0; // Forgetting factor
-float C = 0.0;      // Measurement residual covariance
 
 float accAngleRoll;  // Ángulo de roll (grados)
 float accAnglePitch; // Ángulo de pitch (grados)
@@ -109,8 +105,18 @@ float gyroRatePitch;
 float accAngleY;
 float accAngleX;
 
+float residual_history_roll[window_size] = {0};
+float residual_history_pitch[window_size] = {0};
+int residual_index_roll, residual_index_pitch;
+float R_angle_roll, R_angle_pitch;
+float lambda_roll, lambda_pitch;
+
 // === Configuración del sistema ===
 const uint16_t LOOP_FREQ = 100;               // Frecuencia del loop en Hz
 const float DT = 1.0f / LOOP_FREQ;            // Paso de tiempo
 const uint32_t LOOP_US = 1000000 / LOOP_FREQ; // Microsegundos por ciclo
 const int IDLE_PWM = 1000;
+float lambda = 0.96;
+float residual_history[window_size] = {0};
+int residual_index = 0;
+float c_threshold = 0.01;

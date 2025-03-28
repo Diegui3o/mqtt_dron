@@ -13,87 +13,129 @@
 
 // Declare and initialize Q and R
 float Q[2][2] = {{0.001, 0}, {0, 0.003}}; // Process noise covariance matrix
-float R = 0.03;                           // Measurement noise covariance
+float R = 0.0005;                         // Measurement noise covariance
 
 // Función para el filtro de Kalman (roll)
-void kalmanUpdateRoll(float accAngleRoll, float RateRoll, float dt)
+template <size_t N>
+void kalmanUpdate(volatile float &angle, volatile float &bias, float P[2][2],
+                  float accAngle, float gyroRate,
+                  float residual_history[], int &residual_index,
+                  float &R_angle, float &lambda)
 {
-  // State transition matrix
+
+  // 0. Aplicar factor de olvido ANTES de la predicción
+  for (int i = 0; i < 2; i++)
+  {
+    for (int j = 0; j < 2; j++)
+    {
+      P[i][j] *= lambda;
+    }
+  }
+
+  // 1. Predicción del estado
+  angle += dt * (gyroRate - bias);
+
+  // 2. Predicción de covarianza (Forma matricial correcta)
   float F[2][2] = {{1, -dt}, {0, 1}};
-  float G[2] = {dt, 0};
-  float H[2] = {1, 0};
+  float P_pred[2][2] = {0};
 
-  // State prediction
-  float x_pred[2];
-  x_pred[0] = F[0][0] * x_roll[0] + F[0][1] * x_roll[1] + G[0] * RateRoll;
-  x_pred[1] = F[1][0] * x_roll[0] + F[1][1] * x_roll[1] + G[1] * RateRoll;
+  // F * P
+  for (int i = 0; i < 2; i++)
+  {
+    for (int j = 0; j < 2; j++)
+    {
+      P_pred[i][j] = F[i][0] * P[0][j] + F[i][1] * P[1][j];
+    }
+  }
 
-  // Error covariance prediction
-  float P_pred[2][2];
-  P_pred[0][0] = F[0][0] * P_roll[0][0] + F[0][1] * P_roll[1][0];
-  P_pred[0][1] = F[0][0] * P_roll[0][1] + F[0][1] * P_roll[1][1];
-  P_pred[1][0] = F[1][0] * P_roll[0][0] + F[1][1] * P_roll[1][0];
-  P_pred[1][1] = F[1][0] * P_roll[0][1] + F[1][1] * P_roll[1][1];
+  // (F * P) * F^T + Q
+  for (int i = 0; i < 2; i++)
+  {
+    for (int j = 0; j < 2; j++)
+    {
+      P[i][j] = 0;
+      for (int k = 0; k < 2; k++)
+      {
+        P[i][j] += P_pred[i][k] * F[j][k];
+      }
+      P[i][j] += Q[i][j] * dt; // Q es por unidad de tiempo
+    }
+  }
 
-  // Add process noise
-  P_pred[0][0] += Q[0][0];
-  P_pred[1][1] += Q[1][1];
+  // 3. Residual y ventana
+  float residual = accAngle - angle;
+  residual_history[residual_index % window_size] = residual * residual;
+  residual_index++;
 
-  // Kalman gain
-  float S = H[0] * P_pred[0][0] * H[0] + R;
-  float K[2];
-  K[0] = P_pred[0][0] * H[0] / S;
-  K[1] = P_pred[1][0] * H[0] / S;
+  // 4. Calcular Ck (covarianza residual)
+  float Ck = 0;
+  for (int i = 0; i < window_size; i++)
+  {
+    Ck += residual_history[i];
+  }
+  Ck /= window_size;
 
-  // Measurement residual
-  float d_roll = accAngleRoll - (H[0] * x_pred[0]);
+  // 5. Adaptar R dinámicamente
+  float sigmaR = Ck - P[0][0];
+  if (sigmaR < 0)
+    sigmaR = 0;
 
-  // State update
-  x_roll[0] = x_pred[0] + K[0] * d_roll;
-  x_roll[1] = x_pred[1] + K[1] * d_roll;
+  if (fabs(sigmaR) > c_threshold)
+  {
+    R_angle = sigmaR + (R_angle - sigmaR) / sqrt(residual_index + 1.0);
+  }
 
-  // Error covariance update
-  P_roll[0][0] = (1 - K[0] * H[0]) * P_pred[0][0];
-  P_roll[0][1] = (1 - K[0] * H[0]) * P_pred[0][1];
-  P_roll[1][0] = -K[1] * H[0] * P_pred[0][0] + P_pred[1][0];
-  P_roll[1][1] = -K[1] * H[0] * P_pred[0][1] + P_pred[1][1];
+  // 6. Ganancia de Kalman
+  float S = P[0][0] + R_angle;
+  float K[2] = {P[0][0] / S, P[1][0] / S};
 
-  // Forgetting factor adaptation
-  C = (C * 0.99) + (0.01 * d_roll * d_roll);
-  lambda = 1.0; // Simplified for now, implement your rule here
+  // 7. Actualizar estado
+  angle += K[0] * residual;
+  bias += K[1] * residual;
 
-  // Update error covariance with forgetting factor
-  P_roll[0][0] = (C + lambda * d_roll * d_roll) / C * P_roll[0][0];
-  P_roll[1][1] = (C + lambda * d_roll * d_roll) / C * P_roll[1][1];
+  // 8. Actualizar covarianza
+  float P00 = P[0][0];
+  float P01 = P[0][1];
+
+  P[0][0] -= K[0] * P00;
+  P[0][1] -= K[0] * P01;
+  P[1][0] -= K[1] * P00;
+  P[1][1] -= K[1] * P01;
+
+  // 9. Calcular factor de olvido para próxima iteración
+  int l1 = window_size;
+  int l2 = window_size / 2;
+  float recent = 0, past = 0;
+
+  for (int i = residual_index - l1; i < residual_index; i++)
+  {
+    if (i >= 0)
+      recent += residual_history[i % window_size];
+  }
+  for (int i = residual_index - l1; i < residual_index - l2; i++)
+  {
+    if (i >= 0)
+      past += residual_history[i % window_size];
+  }
+
+  lambda = (past != 0) ? recent / past : 1.0;
 }
 
-// Función para el filtro de Kalman (pitch)
+// Wrappers para roll y pitch
+void kalmanUpdateRoll(float accAngleRoll, float gyroRateRoll)
+{
+  kalmanUpdate<window_size>(AngleRoll, x_roll[1], P_roll,
+                            accAngleRoll, gyroRateRoll, // These should be the actual measurements
+                            residual_history_roll, residual_index_roll,
+                            R_angle_roll, lambda_roll);
+}
+
 void kalmanUpdatePitch(float accAnglePitch, float gyroRatePitch)
 {
-  // Predicción del estado
-  x_pitch[0] += dt * (gyroRatePitch - x_pitch[1]); // Actualiza el ángulo
-  x_pitch[1] = x_pitch[1];                         // El bias del giroscopio no cambia
-
-  // Predicción de la covarianza del error
-  P_pitch[0][0] += dt * (P_pitch[1][1] * dt - P_pitch[0][1] - P_pitch[1][0] + Q_angle);
-  P_pitch[0][1] -= dt * P_pitch[1][1];
-  P_pitch[1][0] -= dt * P_pitch[1][1];
-  P_pitch[1][1] += Q_gyro * dt;
-
-  // Ganancia de Kalman
-  float S = P_pitch[0][0] + R_angle;
-  float K[2];
-  K[0] = P_pitch[0][0] / S;
-  K[1] = P_pitch[1][0] / S;
-
-  float y = accAnglePitch - x_pitch[0];
-  x_pitch[0] += K[0] * y;
-  x_pitch[1] += K[1] * y;
-
-  P_pitch[0][0] -= K[0] * P_pitch[0][0];
-  P_pitch[0][1] -= K[0] * P_pitch[0][1];
-  P_pitch[1][0] -= K[1] * P_pitch[0][0];
-  P_pitch[1][1] -= K[1] * P_pitch[0][1];
+  kalmanUpdate<window_size>(AnglePitch, x_pitch[1], P_pitch,
+                            accAnglePitch, gyroRatePitch, // These should be the actual measurements
+                            residual_history_pitch, residual_index_pitch,
+                            R_angle_pitch, lambda_pitch);
 }
 
 void gyro_signals(void)
@@ -101,7 +143,7 @@ void gyro_signals(void)
   // Leer los valores de los sensores
   Wire.beginTransmission(0x68);
   Wire.write(0x1A);
-  Wire.write(0x05);
+  Wire.write(0x03);
   Wire.endTransmission();
   Wire.beginTransmission(0x68);
   Wire.write(0x1C);
@@ -126,9 +168,8 @@ void gyro_signals(void)
   int16_t GyroY = Wire.read() << 8 | Wire.read();
   int16_t GyroZ = Wire.read() << 8 | Wire.read();
 
-  GyroXdps = GyroX / 131.0;
-  GyroYdps = GyroY / 131.0;
-  GyroZdps = GyroZ / 131.0;
+  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 57.29;
+  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 57.29;
 
   accAngleX = (atan(AccY / sqrt(pow(AccX, 2) + pow(AccZ, 2))) * 180 / PI) - 0.58;
   accAngleY = (atan(-1 * AccX / sqrt(pow(AccY, 2) + pow(AccZ, 2))) * 180 / PI) + 1.58;
@@ -142,17 +183,12 @@ void gyro_signals(void)
   {
     Serial.println("Error: AccZ es cero");
   }
-
   gyroRateRoll = GyroX / 65.5; // Tasa de giro en grados/segundo
   gyroRatePitch = GyroY / 65.5;
-  RateYaw = GyroZ / 65.5;
 
   // Aplicar el filtro de Kalman
-  kalmanUpdateRoll(accAngleRoll, gyroRateRoll, 0.01);
+  kalmanUpdateRoll(accAngleRoll, gyroRateRoll);
   kalmanUpdatePitch(accAnglePitch, gyroRatePitch);
-
-  AngleRoll = x_roll[0];
-  AnglePitch = x_pitch[0];
 }
 
 void setupMPU()
@@ -179,10 +215,4 @@ void setupMPU()
 
 void loopMPU()
 {
-
-  Serial.print("Roll Angle=");
-  Serial.print(AngleRoll);
-  Serial.print("Pitch Angle=");
-  Serial.println(AnglePitch);
-  delay(50);
 }

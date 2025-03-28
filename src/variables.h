@@ -5,6 +5,9 @@
 #include <ESP32Servo.h>
 #include <MPU6050.h>
 
+// Define window_size before it is used
+#define window_size 10 // Tamaño de la ventana
+
 extern MPU6050 accelgyro;
 extern volatile float RatePitch, RateRoll, RateYaw;
 extern float RateCalibrationPitch, RateCalibrationRoll, RateCalibrationYaw, AccXCalibration, AccYCalibration, AccZCalibration;
@@ -85,32 +88,24 @@ extern float complementaryAngleRoll;
 extern float complementaryAnglePitch;
 
 extern volatile float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
-// Estado estimado: [ángulo, sesgo]
-extern volatile float x_roll[2];
-extern volatile float x_pitch[2];
 
 // Matriz de covarianza del error
-extern float dt;      // Paso de tiempo (ajustar según la frecuencia de muestreo)
+extern float dt; // Paso de tiempo (ajustar según la frecuencia de muestreo, variable)
+
+// Use TIME_STEP for macro-defined time step
 extern float Q_angle; // Covarianza del ruido del proceso (ángulo)
 extern float Q_gyro;  // Covarianza del ruido del proceso (giroscopio)
 extern float R_angle; // Covarianza del ruido de medición (acelerómetro)
-
-// Estado y matrices de covarianza para roll
-extern volatile float x_roll[2]; // [ángulo, bias_del_giroscopio]
-extern float P_roll[2][2];       // Matriz de covarianza del error
 
 // Estado y matrices de covarianza para pitch
-extern volatile float x_pitch[2]; // [ángulo, bias_del_giroscopio]
-extern float P_pitch[2][2];       // Matriz de covarianza del error
-
-extern float dt;      // Paso de tiempo
-extern float Q_angle; // Covarianza del ruido del proceso (ángulo)
-extern float Q_gyro;  // Covarianza del ruido del proceso (giroscopio)
-extern float R_angle; // Covarianza del ruido de medición (acelerómetro)
-
-// Variables para el FFAKF
-extern float C; // Covarianza del residual (roll)extern float lambda_roll;  // Factor de olvido (roll)
-extern float lambda;
+extern volatile float x_roll[2];
+extern volatile float x_pitch[2];
+extern float P_roll[2][2], P_pitch[2][2];
+extern float residual_history_roll[window_size];
+extern float residual_history_pitch[window_size];
+extern int residual_index_roll, residual_index_pitch;
+extern float R_angle_roll, R_angle_pitch;
+extern float lambda_roll, lambda_pitch;
 
 extern float accAngleRoll;  // Ángulo de roll (grados)
 extern float accAnglePitch; // Ángulo de pitch (grados)
@@ -125,5 +120,10 @@ extern const uint16_t LOOP_FREQ; // Frecuencia del loop en Hz
 extern const float DT;           // Paso de tiempo
 extern const uint32_t LOOP_US;   // Microsegundos por ciclo
 extern const int IDLE_PWM;
+
+extern float lambda;
+extern float residual_history[window_size];
+extern int residual_index;
+extern float c_threshold;
 
 #endif // VARIABLES_H

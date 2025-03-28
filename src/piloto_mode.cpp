@@ -76,10 +76,10 @@ void applyControl(float tau_x, float tau_y, float tau_z)
     float pwm4 = 1500 + tau_x - tau_y + tau_z;
 
     // Limitar valores PWM
-    MotorInput1 = constrain(pwm1, 1000, 2000);
-    MotorInput2 = constrain(pwm2, 1000, 2000);
-    MotorInput3 = constrain(pwm3, 1000, 2000);
-    MotorInput4 = constrain(pwm4, 1000, 2000);
+    MotorInput3 = constrain(pwm1, 1000, 2000);
+    MotorInput4 = constrain(pwm2, 1000, 2000);
+    MotorInput1 = constrain(pwm3, 1000, 2000);
+    MotorInput2 = constrain(pwm4, 1000, 2000);
 
     // Enviar señales
     mot1.writeMicroseconds(round(MotorInput1));
