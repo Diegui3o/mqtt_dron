@@ -5,40 +5,33 @@
 #include "motores.h"
 #include "variables.h"
 #include "mpu.h"
-#include "manual_mode.h"
 #include <data.h>
 #include <Wire.h>
 #include "piloto_mode.h"
-#include <queue>
 #include <esp_task_wdt.h>
 
-// Variables compartidas entre núcleos
+// ================= VARIABLES =================
 volatile bool ledState = false;
 volatile bool motorState = false;
 volatile int modoActual = 1;
 volatile bool modoCambiado = false;
 
-// Objetos globales
 WiFiClient espClient;
 PubSubClient client(espClient);
 Preferences preferences;
-TaskHandle_t Task1;
+TaskHandle_t TaskControl;
 
-// Cola de mensajes MQTT
-std::queue<String> mqttQueue;
 unsigned long lastPublishTime = 0;
 const int publishInterval = 30; // ms
 
-// Prototipos de funciones
+// ================= FUNCIONES =================
 void setup_wifi();
 void reconnect();
 void callback(char *topic, byte *payload, unsigned int length);
 void handleControlMessage(const String &message);
 void handleModeMessage(const String &message);
-void Task1code(void *pvParameters);
-void prepareAndQueueMessages();
-void processMQTTQueue();
-void checkStack();
+void TaskControlCode(void *pvParameters);
+void prepareAndPublishMessages();
 
 void setup_wifi()
 {
@@ -115,7 +108,7 @@ void handleControlMessage(const String &message)
 
 void handleModeMessage(const String &message)
 {
-    int nuevoModo;
+    int nuevoModo = -1;
 
     if (message.charAt(0) == '{')
     {
@@ -133,7 +126,7 @@ void handleModeMessage(const String &message)
         nuevoModo = message.toInt();
     }
 
-    if (nuevoModo != modoActual)
+    if (nuevoModo != modoActual && nuevoModo >= 0)
     {
         modoActual = nuevoModo;
         modoCambiado = true;
@@ -141,43 +134,47 @@ void handleModeMessage(const String &message)
     }
 }
 
-void Task1code(void *pvParameters)
+void TaskControlCode(void *pvParameters)
 {
+    esp_task_wdt_add(NULL); // Add this task to the watchdog
     for (;;)
     {
+        esp_task_wdt_reset(); // Reset the watchdog timer
+
         digitalWrite(pinLed, ledState ? HIGH : LOW);
         motorState ? encenderMotores(1500) : apagarMotores();
 
-        switch (modoActual)
+        if (modoCambiado)
         {
-        case 0:
-            if (modoCambiado)
+            esp_task_wdt_reset(); // Reset watchdog before handling mode change
+            switch (modoActual)
             {
-                setup_pilote_mode();
+            case 0:
+                Serial.println("Iniciando modo piloto...");
                 modoCambiado = false;
+                setup_pilote_mode(); // Only setup here
+                break;
+            case 1:
+                Serial.println("Modo manual activado");
+                modoCambiado = false;
+                break;
+            case 2:
+                Serial.println("Modo seguro");
+                modoCambiado = false;
+                break;
+            default:
+                modoCambiado = false;
+                break;
             }
-            loop_pilote_mode();
-            break;
-        case 1:
-            if (modoCambiado)
-                modoCambiado = false;
-            break;
-        case 2:
-            if (modoCambiado)
-                modoCambiado = false;
-            break;
-        default:
-            if (modoCambiado)
-                modoCambiado = false;
-            break;
         }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Add delay to prevent blocking
     }
 }
 
-void prepareAndQueueMessages()
+void prepareAndPublishMessages()
 {
-    // Publicar datos del MPU
+    // Angles
     JsonDocument anglesDoc;
     anglesDoc["AngleRoll"] = AngleRoll_est;
     anglesDoc["AnglePitch"] = AnglePitch_est;
@@ -186,7 +183,7 @@ void prepareAndQueueMessages()
     size_t anglesLen = serializeJson(anglesDoc, anglesBuffer);
     client.publish(mqtt_topic_angles, anglesBuffer, anglesLen);
 
-    // Publicar tasas
+    // Rates
     JsonDocument ratesDoc;
     ratesDoc["RateRoll"] = gyroRateRoll;
     ratesDoc["RatePitch"] = gyroRatePitch;
@@ -195,7 +192,7 @@ void prepareAndQueueMessages()
     size_t ratesLen = serializeJson(ratesDoc, ratesBuffer);
     client.publish(mqtt_topic_rates, ratesBuffer, ratesLen);
 
-    // Publicar aceleraciones
+    // Aceleración
     JsonDocument accDoc;
     accDoc["AccX"] = AccX;
     accDoc["AccY"] = AccY;
@@ -204,7 +201,7 @@ void prepareAndQueueMessages()
     size_t accLen = serializeJson(accDoc, accBuffer);
     client.publish(mqtt_topic_acc, accBuffer, accLen);
 
-    // Publicar giroscopio
+    // Giroscopio
     JsonDocument gyroDoc;
     gyroDoc["GyroXdps"] = GyroXdps;
     gyroDoc["GyroYdps"] = GyroYdps;
@@ -213,7 +210,7 @@ void prepareAndQueueMessages()
     size_t gyroLen = serializeJson(gyroDoc, gyroBuffer);
     client.publish(mqtt_topic_gyro, gyroBuffer, gyroLen);
 
-    // Publicar ángulos de Kalman
+    // Kalman
     JsonDocument kalmanDoc;
     kalmanDoc["KalmanAngleRoll"] = AngleRoll;
     kalmanDoc["KalmanAnglePitch"] = AnglePitch;
@@ -227,7 +224,7 @@ void prepareAndQueueMessages()
     size_t kalmanLen = serializeJson(kalmanDoc, kalmanBuffer);
     client.publish(mqtt_topic_kalman, kalmanBuffer, kalmanLen);
 
-    // Publicar entradas de motores
+    // Motores
     JsonDocument motorsDoc;
     motorsDoc["MotorInput1"] = MotorInput1;
     motorsDoc["MotorInput2"] = MotorInput2;
@@ -236,20 +233,6 @@ void prepareAndQueueMessages()
     char motorsBuffer[200];
     size_t motorsLen = serializeJson(motorsDoc, motorsBuffer);
     client.publish(mqtt_topic_motors, motorsBuffer, motorsLen);
-}
-
-void processMQTTQueue()
-{
-    if (!mqttQueue.empty() && client.connected())
-    {
-        String message = mqttQueue.front();
-        int separatorPos = message.indexOf('|');
-        String topic = message.substring(0, separatorPos);
-        String payload = message.substring(separatorPos + 1);
-
-        client.publish(topic.c_str(), payload.c_str(), false); // QoS 0
-        mqttQueue.pop();
-    }
 }
 
 void setup()
@@ -263,53 +246,47 @@ void setup()
     digitalWrite(pinLed, ledState ? HIGH : LOW);
     setCpuFrequencyMhz(160);
     setupMPU();
+
     setup_wifi();
     btStop();
     client.setServer(mqttServer, mqtt_port);
     client.setCallback(callback);
 
-    // Configurar watchdog
-    esp_task_wdt_init(5, true);
+    esp_task_wdt_init(10, true); // 10s WDT
+    esp_task_wdt_add(NULL);
 
-    // Tarea en núcleo 1 con mayor prioridad
     xTaskCreatePinnedToCore(
-        Task1code,
-        "Task1",
+        TaskControlCode,
+        "TaskControl",
         10000,
         NULL,
-        2, // Prioridad aumentada
-        &Task1,
-        1);
+        1,
+        &TaskControl,
+        1); // Núcleo 1
 }
 
 void loop()
 {
-    unsigned long currentTime = millis();
+    esp_task_wdt_reset(); // Reset the watchdog timer
 
-    // 1. Gestionar conexión MQTT
     if (!client.connected())
     {
         reconnect();
     }
     client.loop();
 
-    // 2. Procesar sensores
     gyro_signals();
-    loopMPU();
 
-    // 3. Publicar datos en intervalos regulares
+    unsigned long currentTime = millis();
     if (currentTime - lastPublishTime >= publishInterval)
     {
         lastPublishTime = currentTime;
-        prepareAndQueueMessages();
+        prepareAndPublishMessages();
     }
 
-    // 4. Procesar cola MQTT
-    processMQTTQueue();
-}
-
-void checkStack()
-{
-    Serial.printf("Stack libre (Core 0): %d\n", uxTaskGetStackHighWaterMark(NULL));
-    Serial.printf("Stack libre (Core 1): %d\n", uxTaskGetStackHighWaterMark(Task1));
+    if (modoActual == 0)
+    {
+        esp_task_wdt_reset(); // Reset watchdog before entering pilot mode
+        loop_pilote_mode();   // Ejecuta aquí el modo piloto (núcleo 0)
+    }
 }

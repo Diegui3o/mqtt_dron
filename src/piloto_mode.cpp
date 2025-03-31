@@ -5,8 +5,12 @@
 #include <ESP32Servo.h>
 #include <piloto_mode.h>
 #include "variables.h"
+#include <esp_task_wdt.h>
 #include "mpu.h"
 #include "motores.h"
+
+// Variable to track MPU calibration status
+bool mpu_ready = false;
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
@@ -19,17 +23,22 @@ const float Kc_at[3][6] = {
     {0, 4.8651, 0, 0, 0.6804, 0},
     {0, 0, 3.1383, 0, 0, 1.2069}};
 
+void calibrateSensors();
+void meansensors();
+void calibration();
+void applyControl(float tau_x, float tau_y, float tau_z);
+
 // === SETUP INICIAL ===
 void setup_pilote_mode()
 {
     Serial.begin(115200);
     Serial.println("Iniciando modo pilote...");
-    Wire.begin();
     pinMode(pinLed, OUTPUT);
-    accelgyro.initialize();
-    calibrateSensors();
     setupMotores();
     Serial.println("Setup completado.");
+    digitalWrite(pinLed, HIGH);
+    delay(10);
+    digitalWrite(pinLed, LOW);
 }
 
 // === LOOP CON CONTROL LQR ===
@@ -46,18 +55,15 @@ void loop_pilote_mode()
     integral_psi = constrain(integral_psi + error_psi * DT, -50, 50);
 
     // Estado del sistema
-    float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
+    float x_c[6] = {AngleRoll_est, AnglePitch_est, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
     float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
     // Calcular señales de control u = -Kc*x_c - Ki*x_i
     tau_x = 0, tau_y = 0, tau_z = 0;
 
-    for (int j = 0; j < 6; j++)
-    {
-        tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi + Kc_at[0][3] * RateRoll;
-        tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta + Kc_at[1][4] * RatePitch;
-        tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi + Kc_at[2][5] * RateYaw;
-    }
+    tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * gyroRateRoll;
+    tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta + Kc_at[1][4] * gyroRatePitch;
+    tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi + Kc_at[2][5] * RateYaw;
 
     tau_x -= Ki_at[0][0] * x_i[0];
     tau_y -= Ki_at[1][1] * x_i[1];
@@ -70,16 +76,16 @@ void loop_pilote_mode()
 // === CONTROL A LOS MOTORES ===
 void applyControl(float tau_x, float tau_y, float tau_z)
 {
-    float pwm1 = 1500 - tau_x - tau_y - tau_z;
-    float pwm2 = 1500 - tau_x + tau_y + tau_z;
-    float pwm3 = 1500 + tau_x + tau_y - tau_z;
-    float pwm4 = 1500 + tau_x - tau_y + tau_z;
+    float pwm1 = 1400 - tau_x - tau_y - tau_z;
+    float pwm2 = 1400 - tau_x + tau_y + tau_z;
+    float pwm3 = 1400 + tau_x + tau_y - tau_z;
+    float pwm4 = 1400 + tau_x - tau_y + tau_z;
 
     // Limitar valores PWM
-    MotorInput3 = constrain(pwm1, 1000, 2000);
-    MotorInput4 = constrain(pwm2, 1000, 2000);
-    MotorInput1 = constrain(pwm3, 1000, 2000);
-    MotorInput2 = constrain(pwm4, 1000, 2000);
+    MotorInput1 = constrain(pwm1, 1000, 2000);
+    MotorInput2 = constrain(pwm2, 1000, 2000);
+    MotorInput3 = constrain(pwm3, 1000, 2000);
+    MotorInput4 = constrain(pwm4, 1000, 2000);
 
     // Enviar señales
     mot1.writeMicroseconds(round(MotorInput1));
