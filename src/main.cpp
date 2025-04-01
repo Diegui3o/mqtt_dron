@@ -136,39 +136,44 @@ void handleModeMessage(const String &message)
 
 void TaskControlCode(void *pvParameters)
 {
-    esp_task_wdt_add(NULL); // Add this task to the watchdog
+    esp_task_wdt_add(NULL);
     for (;;)
     {
-        esp_task_wdt_reset(); // Reset the watchdog timer
+        esp_task_wdt_reset();
 
         digitalWrite(pinLed, ledState ? HIGH : LOW);
         motorState ? encenderMotores(1500) : apagarMotores();
 
         if (modoCambiado)
         {
-            esp_task_wdt_reset(); // Reset watchdog before handling mode change
+            esp_task_wdt_reset();
+            modoCambiado = false; // Resetear la bandera aquí
             switch (modoActual)
             {
             case 0:
-                Serial.println("Iniciando modo piloto...");
-                modoCambiado = false;
-                setup_pilote_mode(); // Only setup here
+                Serial.println("Modo piloto");
+                setup_pilote_mode();
                 break;
             case 1:
-                Serial.println("Modo manual activado");
-                modoCambiado = false;
+                Serial.println("Modo seguro");
+                // Lógica del modo seguro
                 break;
             case 2:
-                Serial.println("Modo seguro");
-                modoCambiado = false;
+                Serial.println("Modo manual");
+                // Lógica del modo manual
                 break;
             default:
-                modoCambiado = false;
                 break;
             }
         }
 
-        vTaskDelay(10 / portTICK_PERIOD_MS); // Add delay to prevent blocking
+        // Si estamos en modo piloto, ejecutamos su loop
+        if (modoActual == 0)
+        {
+            loop_pilote_mode();
+        }
+
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
 
@@ -214,8 +219,8 @@ void prepareAndPublishMessages()
     JsonDocument kalmanDoc;
     kalmanDoc["KalmanAngleRoll"] = AngleRoll;
     kalmanDoc["KalmanAnglePitch"] = AnglePitch;
-    kalmanDoc["complementaryAngleRoll"] = complementaryAngleRoll;
-    kalmanDoc["complementaryAnglePitch"] = complementaryAnglePitch;
+    kalmanDoc["complementaryAngleRoll"] = integral_phi;
+    kalmanDoc["complementaryAnglePitch"] = integral_theta;
     kalmanDoc["InputThrottle"] = error_phi;
     kalmanDoc["InputRoll"] = error_theta;
     kalmanDoc["InputPitch"] = tau_x;
@@ -252,7 +257,7 @@ void setup()
     client.setServer(mqttServer, mqtt_port);
     client.setCallback(callback);
 
-    esp_task_wdt_init(10, true); // 10s WDT
+    esp_task_wdt_init(10, true);
     esp_task_wdt_add(NULL);
 
     xTaskCreatePinnedToCore(
@@ -267,7 +272,7 @@ void setup()
 
 void loop()
 {
-    esp_task_wdt_reset(); // Reset the watchdog timer
+    esp_task_wdt_reset();
 
     if (!client.connected())
     {
@@ -282,11 +287,5 @@ void loop()
     {
         lastPublishTime = currentTime;
         prepareAndPublishMessages();
-    }
-
-    if (modoActual == 0)
-    {
-        esp_task_wdt_reset(); // Reset watchdog before entering pilot mode
-        loop_pilote_mode();   // Ejecuta aquí el modo piloto (núcleo 0)
     }
 }

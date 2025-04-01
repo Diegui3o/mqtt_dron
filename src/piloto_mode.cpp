@@ -31,39 +31,30 @@ void applyControl(float tau_x, float tau_y, float tau_z);
 // === SETUP INICIAL ===
 void setup_pilote_mode()
 {
+    pinMode(pinLed, OUTPUT);
+    digitalWrite(pinLed, HIGH);
+    delay(50);
     Serial.begin(115200);
     Serial.println("Iniciando modo pilote...");
-    pinMode(pinLed, OUTPUT);
     setupMotores();
     Serial.println("Setup completado.");
-    digitalWrite(pinLed, HIGH);
-    delay(10);
     digitalWrite(pinLed, LOW);
 }
 
 // === LOOP CON CONTROL LQR ===
 void loop_pilote_mode()
 {
-    // === Calcular errores actuales ===
-    error_phi = phi_ref - AngleRoll;
-    error_theta = theta_ref - AnglePitch;
-    error_psi = psi_ref - AngleYaw;
-
-    // Actualizar términos integrales con anti-windup
-    integral_phi = constrain(integral_phi + error_phi * DT, -50, 50);
-    integral_theta = constrain(integral_theta + error_theta * DT, -50, 50);
-    integral_psi = constrain(integral_psi + error_psi * DT, -50, 50);
-
     // Estado del sistema
     float x_c[6] = {AngleRoll_est, AnglePitch_est, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
     float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
-    // Calcular señales de control u = -Kc*x_c - Ki*x_i
-    tau_x = 0, tau_y = 0, tau_z = 0;
+    tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
+    tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta + Kc_at[1][4] * x_c[4];
+    tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi + Kc_at[2][5] * x_c[5];
 
-    tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * gyroRateRoll;
-    tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta + Kc_at[1][4] * gyroRatePitch;
-    tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi + Kc_at[2][5] * RateYaw;
+    error_phi = phi_ref - x_c[0];
+    error_theta = theta_ref - x_c[1];
+    error_psi = psi_ref - 0;
 
     tau_x -= Ki_at[0][0] * x_i[0];
     tau_y -= Ki_at[1][1] * x_i[1];
