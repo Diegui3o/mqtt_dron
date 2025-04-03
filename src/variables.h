@@ -32,10 +32,9 @@ extern const int mot3_pin;
 extern const int mot4_pin;
 
 // Variables de estado
-extern float phi_ref, theta_ref, psi_ref; // Ángulos de referencia
+extern volatile float phi_ref, theta_ref, psi_ref; // Ángulos de referencia
 
-// Variables de control
-extern float integral_phi, integral_theta, integral_psi;
+extern volatile float integral_phi, integral_theta, integral_psi;
 
 // Variables para la calibración
 extern int buffersize;    // Cantidad de lecturas para promediar
@@ -126,4 +125,34 @@ extern float residual_history[window_size];
 extern int residual_index;
 extern float c_threshold;
 
+extern float dt;
+extern float Q_angle;
+extern float Q_gyro;
+extern float R_angle;
+extern float P_roll[2][2];
+extern float P_pitch[2][2];
+
+// --- CALIBRATION OFFSETS ---
+extern double accelOffsetX, accelOffsetY, accelOffsetZ;
+extern double gyroXOffset, gyroYOffset, gyroZOffset;
+
+// --- FILTER VARIABLES ---
+extern double pitch, roll;
+
+extern double Q_bias;
+extern double R_measure;
+extern double angle, bias, rate;
+extern double P[2][2];
+
+extern unsigned long lastTime;
+
+struct Kalman
+{
+    double angle;   // Estimated angle
+    double bias;    // Estimated bias
+    double P[2][2]; // Error covariance matrix
+};
+
+extern Kalman kalmanRoll;
+extern Kalman kalmanPitch;
 #endif // VARIABLES_H

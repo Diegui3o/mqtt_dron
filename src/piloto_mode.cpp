@@ -45,7 +45,7 @@ void setup_pilote_mode()
 void loop_pilote_mode()
 {
     // Estado del sistema
-    float x_c[6] = {AngleRoll_est, AnglePitch_est, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
+    float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
     float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
     tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];

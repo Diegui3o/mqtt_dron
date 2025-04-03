@@ -77,26 +77,12 @@ float complementaryAnglePitch = 0.0f;
 volatile float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
 
 // Variables de estado
-float phi_ref = 0.0;
-float theta_ref = 0.0;
-float psi_ref = 0.0;
-float integral_phi = 0.0;
-float integral_theta = 0.0;
-float integral_psi = 0.0;
-
-// Estado estimado: [ángulo, sesgo]
-float dt = 0.05;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
-float Q_angle = 0.0001; // Covarianza del ruido del proceso (ángulo)
-float Q_gyro = 0.001;  // Covarianza del ruido del proceso (giroscopio)
-float R_angle = 0.1;  // Covarianza del ruido de medición (acelerómetro)
-
-// Estado y matrices de covarianza para roll
-volatile float x_roll[2] = {0, 0};     // [ángulo, bias_del_giroscopio]
-float P_roll[2][2] = {{1, 0}, {0, 1}}; // Matriz de covarianza del error
-
-// Estado y matrices de covarianza para pitch
-volatile float x_pitch[2] = {0, 0};      // [ángulo, bias_del_giroscopio]
-float P_pitch[2][2] = {{1, 0}, {0, 1}}; // Matriz de covarianza del error
+volatile float phi_ref;
+volatile float theta_ref;
+volatile float psi_ref;
+volatile float integral_phi;
+volatile float integral_theta;
+volatile float integral_psi;
 
 float accAngleRoll;  // Ángulo de roll (grados)
 float accAnglePitch; // Ángulo de pitch (grados)
@@ -120,3 +106,24 @@ float lambda = 0.96;
 float residual_history[window_size] = {0};
 int residual_index = 0;
 float c_threshold = 0.01;
+
+float dt = 0.01;        // Paso de tiempo (ajustar según la frecuencia de muestreo)
+float Q_angle = 0.001f; // Covarianza del ruido del proceso (ángulo)
+float Q_gyro = 0.003;   // Covarianza del ruido del proceso (giroscopio)
+float R_angle = 0.03;   // Covarianza del ruido de medición (acelerómetro)
+
+// --- CALIBRATION OFFSETS ---
+double accelOffsetX = 0, accelOffsetY = 0, accelOffsetZ = 0;
+double gyroXOffset = 0, gyroYOffset = 0, gyroZOffset = 0;
+
+// --- FILTER VARIABLES ---
+double pitch = 0, roll = 0;
+double Q_bias = 0.003f;
+double R_measure = 0.03f;
+double angle = 0.0f, bias = 0.0f, rate = 0;
+double P[2][2] = {{0.0, 0.0}, {0.0, 0.0}};
+
+Kalman kalmanRoll = {0, 0, {1, 0, 0, 1}};
+Kalman kalmanPitch = {0, 0, {1, 0, 0, 1}};
+
+unsigned long lastTime;

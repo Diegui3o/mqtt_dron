@@ -9,14 +9,47 @@
 
 #define SDA_MPU 21
 #define SCL_MPU 22
-#define SDA_TOF 4
-#define SCL_TOF 5
+
+// Función para el filtro de Kalman (roll)
+double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
+{
+  // Predicción:
+  double rate = newRate - kf.bias;
+  kf.angle += dt * rate;
+
+  // Actualización de la matriz de error
+  kf.P[0][0] += dt * (dt * kf.P[1][1] - kf.P[0][1] - kf.P[1][0] + Q_angle);
+  kf.P[0][1] -= dt * kf.P[1][1];
+  kf.P[1][0] -= dt * kf.P[1][1];
+  kf.P[1][1] += Q_bias * dt;
+
+  // Medición:
+  float S = kf.P[0][0] + R_measure;
+  float K0 = kf.P[0][0] / S;
+  float K1 = kf.P[1][0] / S;
+
+  // Actualización con la medición (newAngle)
+  float y = newAngle - kf.angle;
+  kf.angle += K0 * y;
+  kf.bias += K1 * y;
+
+  // Actualizar la matriz de covarianza
+  double P00_temp = kf.P[0][0];
+  double P01_temp = kf.P[0][1];
+
+  kf.P[0][0] -= K0 * P00_temp;
+  kf.P[0][1] -= K0 * P01_temp;
+  kf.P[1][0] -= K1 * P00_temp;
+  kf.P[1][1] -= K1 * P01_temp;
+
+  return kf.angle;
+}
 
 void gyro_signals(void)
 {
   Wire.beginTransmission(0x68);
   Wire.write(0x1A);
-  Wire.write(0x03);
+  Wire.write(0x05);
   Wire.endTransmission();
   Wire.beginTransmission(0x68);
   Wire.write(0x1C);
@@ -40,29 +73,28 @@ void gyro_signals(void)
   int16_t GyroX = Wire.read() << 8 | Wire.read();
   int16_t GyroY = Wire.read() << 8 | Wire.read();
   int16_t GyroZ = Wire.read() << 8 | Wire.read();
+  gyroRateRoll = (float)GyroX / 131.0;
+  gyroRatePitch = (float)GyroY / 131.0;
+  RateYaw = (float)GyroZ / 131.0;
 
-  AccX = (float)AccXLSB / 4096;
-  AccY = (float)AccYLSB / 4096;
-  AccZ = (float)AccZLSB / 4096;
+  AccX = (float)AccXLSB / 16384;
+  AccY = (float)AccYLSB / 16384;
+  AccZ = (float)AccZLSB / 16384;
 
-  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 57.29;
-  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 57.29;
+  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
+  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
 
-  accAngleX = (atan(AccY / sqrt(pow(AccX, 2) + pow(AccZ, 2))) * 180 / PI) - 0.58;
-  accAngleY = (atan(-1 * AccX / sqrt(pow(AccY, 2) + pow(AccZ, 2))) * 180 / PI) + 1.58;
+  // Cálculo del ángulo estimado a partir del acelerómetro (usando atan2 puede ser más robusto)
+  accAngleRoll = atan2(AccY, sqrt(AccX * AccX + AccZ * AccZ)) * 180.0 / PI;
+  accAnglePitch = -atan2(AccX, sqrt(AccY * AccY + AccZ * AccZ)) * 180.0 / PI;
 
-  if (AccZ != 0)
-  {
-    accAngleRoll = (atan(AccY / sqrt(pow(AccX, 2) + pow(AccZ, 2))) * 180 / PI) - 0.58;       // Ángulo de roll (grados)
-    accAnglePitch = (atan(-1 * AccX / sqrt(pow(AccY, 2) + pow(AccZ, 2))) * 180 / PI) + 1.58; // Ángulo de pitch (grados)
-  }
-  else
-  {
-    Serial.println("Error: AccZ es cero");
-  }
-  gyroRateRoll = GyroX / 65.5; // Tasa de giro en grados/segundo
-  gyroRatePitch = GyroY / 65.5;
-  RateYaw = GyroZ / 65.5;
+  // Utiliza las tasas del giroscopio
+  float gyroRateRoll_local = gyroRateRoll;
+  float gyroRatePitch_local = gyroRatePitch;
+
+  // Actualización del filtro de Kalman para cada eje
+  AngleRoll = Kalman_filter(kalmanRoll, accAngleRoll, gyroRateRoll_local, dt);
+  AnglePitch = Kalman_filter(kalmanPitch, accAnglePitch, gyroRatePitch_local, dt);
 }
 
 void setupMPU()
