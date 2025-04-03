@@ -14,14 +14,14 @@ bool mpu_ready = false;
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {17.3205, 0, 0},
-    {0, 17.3205, 0},
-    {0, 0, 3.873}};
+    {10, 0, 0},
+    {0, 10, 0},
+    {0, 0, 12.2474}};
 
 const float Kc_at[3][6] = {
-    {4.8651, 0, 0, 0.6804, 0, 0},
-    {0, 4.8651, 0, 0, 0.6804, 0},
-    {0, 0, 3.1383, 0, 0, 1.2069}};
+    {3.3282, 0, 0, 0.5438, 0, 0},
+    {0, 2.659, 0, 0, 0.3335, 0},
+    {0, 0, 5.5535, 0, 0, 1.2183}};
 
 void calibrateSensors();
 void meansensors();
@@ -67,10 +67,10 @@ void loop_pilote_mode()
 // === CONTROL A LOS MOTORES ===
 void applyControl(float tau_x, float tau_y, float tau_z)
 {
-    float pwm1 = 1400 - tau_x - tau_y - tau_z;
-    float pwm2 = 1400 - tau_x + tau_y + tau_z;
-    float pwm3 = 1400 + tau_x + tau_y - tau_z;
-    float pwm4 = 1400 + tau_x - tau_y + tau_z;
+    float pwm1 = 1550 - tau_x - tau_y - tau_z;
+    float pwm2 = 1550 - tau_x + tau_y + tau_z;
+    float pwm3 = 1550 + tau_x + tau_y - tau_z;
+    float pwm4 = 1550 + tau_x - tau_y + tau_z;
 
     // Limitar valores PWM
     MotorInput1 = constrain(pwm1, 1000, 2000);

@@ -9,6 +9,8 @@
 
 #define SDA_MPU 21
 #define SCL_MPU 22
+#define SDA_TOF 4
+#define SCL_TOF 5
 
 // Función para el filtro de Kalman (roll)
 double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
@@ -73,6 +75,7 @@ void gyro_signals(void)
   int16_t GyroX = Wire.read() << 8 | Wire.read();
   int16_t GyroY = Wire.read() << 8 | Wire.read();
   int16_t GyroZ = Wire.read() << 8 | Wire.read();
+  
   gyroRateRoll = (float)GyroX / 131.0;
   gyroRatePitch = (float)GyroY / 131.0;
   RateYaw = (float)GyroZ / 131.0;
