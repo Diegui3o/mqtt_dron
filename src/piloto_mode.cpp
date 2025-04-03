@@ -23,11 +23,6 @@ const float Kc_at[3][6] = {
     {0, 2.659, 0, 0, 0.3335, 0},
     {0, 0, 5.5535, 0, 0, 1.2183}};
 
-void calibrateSensors();
-void meansensors();
-void calibration();
-void applyControl(float tau_x, float tau_y, float tau_z);
-
 // === SETUP INICIAL ===
 void setup_pilote_mode()
 {

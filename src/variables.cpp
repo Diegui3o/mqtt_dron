@@ -31,7 +31,7 @@ Servo mot2;
 Servo mot3;
 Servo mot4;
 
-const int mot1_pin = 13;
+const int mot1_pin = 15;
 const int mot2_pin = 12;
 const int mot3_pin = 14;
 const int mot4_pin = 27;
