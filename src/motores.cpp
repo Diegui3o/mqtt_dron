@@ -9,15 +9,12 @@
 
 void setupMotores()
 {
+    Serial.begin(115200);
+
     ESP32PWM::allocateTimer(0);
     ESP32PWM::allocateTimer(1);
     ESP32PWM::allocateTimer(2);
     ESP32PWM::allocateTimer(3);
-
-    mot1.setPeriodHertz(400); // Frecuencia PWM para ESCs
-    mot2.setPeriodHertz(400);
-    mot3.setPeriodHertz(400);
-    mot4.setPeriodHertz(400);
 
     mot1.attach(mot1_pin, 1000, 2000);
     mot2.attach(mot2_pin, 1000, 2000);
@@ -25,6 +22,12 @@ void setupMotores()
     mot4.attach(mot4_pin, 1000, 2000);
 
     // Inicializar ESCs
+    mot1.writeMicroseconds(2000);
+    mot2.writeMicroseconds(2000);
+    mot3.writeMicroseconds(2000);
+    mot4.writeMicroseconds(2000);
+    delay(2000);
+
     mot1.writeMicroseconds(IDLE_PWM);
     mot2.writeMicroseconds(IDLE_PWM);
     mot3.writeMicroseconds(IDLE_PWM);
@@ -49,7 +52,23 @@ void apagarMotores()
     mot4.writeMicroseconds(1000);
 }
 
-void loopMotores()
+// === CONTROL A LOS MOTORES ===
+void applyControl(float tau_x, float tau_y, float tau_z)
 {
-    // Código de loop para motores (si es necesario)
+    float pwm1 = InputThrottle - tau_x - tau_y;
+    float pwm2 = InputThrottle - tau_x + tau_y;
+    float pwm3 = InputThrottle + tau_x + tau_y;
+    float pwm4 = InputThrottle + tau_x - tau_y;
+
+    // Limitar valores PWM
+    MotorInput1 = constrain(pwm1, 1000, 2000);
+    MotorInput2 = constrain(pwm2, 1000, 2000);
+    MotorInput3 = constrain(pwm3, 1000, 2000);
+    MotorInput4 = constrain(pwm4, 1000, 2000);
+
+    // Enviar señales
+    mot1.writeMicroseconds(round(MotorInput1));
+    mot2.writeMicroseconds(round(MotorInput2));
+    mot3.writeMicroseconds(round(MotorInput3));
+    mot4.writeMicroseconds(round(MotorInput4));
 }

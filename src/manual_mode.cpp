@@ -1,11 +1,25 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <ESP32Servo.h>
+#include "I2Cdev.h"
+#include <VL53L0X.h>
 #include "variables.h"
-#include "manual_mode.h"
 #include "mpu.h"
+#include "manual_mode.h"
+#include "motores.h"
 
-void channelInterruptHandler()
+// === Matrices LQR ===
+const float Ki_at[3][3] = {
+    {17.1623, 0, 0},
+    {0, 17.1623, 0},
+    {0, 0, 5.3}};
+
+const float Kc_at[3][6] = {
+    {5.3882, 0, 0, 3.2, 0, 0},
+    {0, 5.4022, 0, 0, 3.2, 0},
+    {0, 0, 5.47864, 0, 0, 3.2182}};
+
+void channelInterrupHandler()
 {
   current_time = micros();
   if (digitalRead(channel_1_pin))
@@ -88,31 +102,15 @@ void channelInterruptHandler()
   }
 }
 
-void setupManualmode(void)
+// === SETUP INICIAL ===
+void setup_manual_mode()
 {
-
-  Serial.begin(115200);
-  Serial.println("Iniciando setupManualmode");
-  int led_time = 100;
-  pinMode(15, OUTPUT);
-  digitalWrite(pinLed, LOW);
-  delay(led_time);
+  pinMode(pinLed, OUTPUT);
   digitalWrite(pinLed, HIGH);
-  delay(led_time);
-  digitalWrite(15, LOW);
-  delay(led_time);
-  digitalWrite(15, HIGH);
-  delay(led_time);
-  digitalWrite(15, LOW);
-  delay(led_time);
-  digitalWrite(15, HIGH);
-  delay(led_time);
-  digitalWrite(pinLed, LOW);
-  delay(led_time);
-  digitalWrite(15, HIGH);
-  delay(led_time);
-  digitalWrite(15, LOW);
-  delay(led_time);
+  delay(50);
+  Serial.begin(115200);
+  Serial.println("Iniciando modo manual...");
+  setupMotores();
 
   pinMode(channel_1_pin, INPUT_PULLUP);
   pinMode(channel_2_pin, INPUT_PULLUP);
@@ -121,57 +119,41 @@ void setupManualmode(void)
   pinMode(channel_5_pin, INPUT_PULLUP);
   pinMode(channel_6_pin, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(channel_1_pin), channelInterruptHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_2_pin), channelInterruptHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_3_pin), channelInterruptHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_4_pin), channelInterruptHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_5_pin), channelInterruptHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_6_pin), channelInterruptHandler, CHANGE);
-  delay(100);
+  attachInterrupt(digitalPinToInterrupt(channel_1_pin), channelInterrupHandler, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(channel_2_pin), channelInterrupHandler, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(channel_3_pin), channelInterrupHandler, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(channel_4_pin), channelInterrupHandler, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(channel_5_pin), channelInterrupHandler, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(channel_6_pin), channelInterrupHandler, CHANGE);
 
-  Wire.setClock(400000);
-  Wire.begin();
-  delay(250);
-  Wire.beginTransmission(0x68);
-  Wire.write(0x6B);
-  Wire.write(0x00);
-  Wire.endTransmission();
-
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  ESP32PWM::allocateTimer(2);
-  ESP32PWM::allocateTimer(3);
-
-  delay(1000);
-  mot1.attach(mot1_pin, 1000, 2000);
-  delay(1000);
-  mot1.setPeriodHertz(ESCfreq);
-  delay(100);
-  mot2.attach(mot2_pin, 1000, 2000);
-  delay(1000);
-  mot2.setPeriodHertz(ESCfreq);
-  delay(100);
-  mot3.attach(mot3_pin, 1000, 2000);
-  delay(1000);
-  mot3.setPeriodHertz(ESCfreq);
-  delay(100);
-  mot4.attach(mot4_pin, 1000, 2000);
-  delay(1000);
-  mot4.setPeriodHertz(ESCfreq);
-  delay(100);
-
-  mot1.writeMicroseconds(1000);
-  mot2.writeMicroseconds(1000);
-  mot3.writeMicroseconds(1000);
-  mot4.writeMicroseconds(1000);
-  delay(500);
+  Serial.println("Setup completado.");
   digitalWrite(pinLed, LOW);
-  digitalWrite(pinLed, HIGH);
-  delay(500);
-  digitalWrite(pinLed, LOW);
-  delay(500);
 }
 
-void loopManualmode(void)
+void loop_manual_mode(void)
 {
+
+  DesiredAngleRoll = 0.1 * (ReceiverValue[0] - 1500);
+  DesiredAnglePitch = 0.1 * (ReceiverValue[1] - 1500);
+  InputThrottle = ReceiverValue[2];
+  DesiredRateYaw = 0.15 * (ReceiverValue[3] - 1500);
+
+  // Estado del sistema
+  float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
+  float x_i[3] = {integral_phi, integral_theta, integral_psi};
+
+  tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
+  tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
+  tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi + Kc_at[2][5] * x_c[5];
+
+  error_phi = phi_ref - x_c[0];
+  error_theta = theta_ref - x_c[1];
+  error_psi = psi_ref - 0;
+
+  tau_x -= Ki_at[0][0] * x_i[0];
+  tau_y -= Ki_at[1][1] * x_i[1];
+  tau_z -= Ki_at[2][2] * x_i[2];
+
+  // Aplicar a los motores
+  applyControl(tau_x, tau_y, tau_z);
 }

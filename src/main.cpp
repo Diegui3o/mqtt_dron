@@ -9,6 +9,7 @@
 #include <Wire.h>
 #include "piloto_mode.h"
 #include <esp_task_wdt.h>
+#include "manual_mode.h"
 
 // ================= VARIABLES =================
 volatile bool ledState = false;
@@ -160,17 +161,20 @@ void TaskControlCode(void *pvParameters)
                 break;
             case 2:
                 Serial.println("Modo manual");
-                // Lógica del modo manual
+                setup_manual_mode();
                 break;
             default:
                 break;
             }
         }
 
-        // Si estamos en modo piloto, ejecutamos su loop
         if (modoActual == 0)
         {
             loop_pilote_mode();
+        }
+        if (modoActual == 2)
+        {
+            loop_manual_mode();
         }
 
         vTaskDelay(10 / portTICK_PERIOD_MS);

@@ -76,8 +76,10 @@ extern int ThrottleCutOff;
 
 // Kalman filters for angle mode
 extern volatile float AccX, AccY, AccZ;
-extern volatile float GyroXdps, GyroYdps, GyroZdps;
 extern volatile float AngleRoll, AnglePitch, AngleYaw;
+extern volatile float GyroXdps, GyroYdps, GyroZdps;
+extern volatile float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
+extern volatile float InputRoll, InputThrottle, InputPitch, InputYaw;
 extern volatile float DesiredAngleRoll, DesiredAnglePitch;
 extern volatile float ErrorAngleRoll, ErrorAnglePitch;
 extern volatile float PrevErrorAngleRoll, PrevErrorAnglePitch;

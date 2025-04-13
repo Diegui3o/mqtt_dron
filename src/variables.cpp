@@ -59,13 +59,15 @@ const int channel_4_pin = 33;
 const int channel_5_pin = 25;
 const int channel_6_pin = 26;
 
-int ThrottleIdle = 1050;
+int ThrottleIdle = 1170;
 int ThrottleCutOff = 1000;
 
 // Kalman filters for angle mode
 volatile float AccX, AccY, AccZ;
 volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0;
 volatile float GyroXdps, GyroYdps, GyroZdps;
+volatile float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
+volatile float InputRoll, InputThrottle, InputPitch, InputYaw;
 volatile float DesiredAngleRoll, DesiredAnglePitch;
 volatile float ErrorAngleRoll, ErrorAnglePitch;
 volatile float PrevErrorAngleRoll, PrevErrorAnglePitch;
@@ -77,16 +79,16 @@ float complementaryAnglePitch = 0.0f;
 volatile float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
 
 // Variables de estado
-volatile float phi_ref;
-volatile float theta_ref;
-volatile float psi_ref;
+volatile float phi_ref = -1.5;
+volatile float theta_ref = 1.5;
+volatile float psi_ref = 0.0;
 volatile float integral_phi;
 volatile float integral_theta;
 volatile float integral_psi;
 
 float accAngleRoll;  // Ángulo de roll (grados)
 float accAnglePitch; // Ángulo de pitch (grados)
-float gyroRateRoll;  // Tasa de giro en grados/segundo
+float gyroRateRoll;
 float gyroRatePitch;
 float accAngleY;
 float accAngleX;

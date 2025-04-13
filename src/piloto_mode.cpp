@@ -14,14 +14,14 @@ bool mpu_ready = false;
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {3.1623, 0, 0},
-    {0, 3.1623, 0},
-    {0, 0, 10}};
+    {19.1623, 0, 0},
+    {0, 19.1623, 0},
+    {0, 0, 3.87}};
 
 const float Kc_at[3][6] = {
-    {1.7901, 0, 0, 0.5035, 0, 0},
-    {0, 1.6199, 0, 0, 0.4133, 0},
-    {0, 0, 5.2501, 0, 0, 1.3282}};
+    {6.3882, 0, 0, 4.2, 0, 0},
+    {0, 6.4022, 0, 0, 4.2, 0},
+    {0, 0, 2.97864, 0, 0, 1.3182}};
 
 // === SETUP INICIAL ===
 void setup_pilote_mode()
@@ -44,8 +44,8 @@ void loop_pilote_mode()
     float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
     tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
-    tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta + Kc_at[1][4] * x_c[4];
-    tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi + Kc_at[2][5] * x_c[5];
+    tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
+    tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
 
     error_phi = phi_ref - x_c[0];
     error_theta = theta_ref - x_c[1];
@@ -55,29 +55,10 @@ void loop_pilote_mode()
     tau_y -= Ki_at[1][1] * x_i[1];
     tau_z -= Ki_at[2][2] * x_i[2];
 
+    InputThrottle = 1000; // Valor de referencia para el acelerador
+
     // Aplicar a los motores
     applyControl(tau_x, tau_y, tau_z);
-}
-
-// === CONTROL A LOS MOTORES ===
-void applyControl(float tau_x, float tau_y, float tau_z)
-{
-    float pwm1 = 1550 - tau_x - tau_y - tau_z;
-    float pwm2 = 1550 - tau_x + tau_y + tau_z;
-    float pwm3 = 1550 + tau_x + tau_y - tau_z;
-    float pwm4 = 1550 + tau_x - tau_y + tau_z;
-
-    // Limitar valores PWM
-    MotorInput1 = constrain(pwm1, 1000, 2000);
-    MotorInput2 = constrain(pwm2, 1000, 2000);
-    MotorInput3 = constrain(pwm3, 1000, 2000);
-    MotorInput4 = constrain(pwm4, 1000, 2000);
-
-    // Enviar señales
-    mot1.writeMicroseconds(round(MotorInput1));
-    mot2.writeMicroseconds(round(MotorInput2));
-    mot3.writeMicroseconds(round(MotorInput3));
-    mot4.writeMicroseconds(round(MotorInput4));
 }
 
 // === CALIBRACIÓN DEL MPU6050 ===
