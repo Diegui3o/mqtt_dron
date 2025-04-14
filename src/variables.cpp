@@ -1,6 +1,10 @@
 #include <MPU6050.h> // Asegura que el compilador conoce la clase MPU6050
 #include "variables.h"
 
+// Define global variables
+float vel_z = 0.0;
+float error_z = 0.0;
+
 MPU6050 accelgyro;
 
 volatile float RatePitch = 0.0, RateRoll = 0.0, RateYaw = 0.0;

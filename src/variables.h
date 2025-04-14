@@ -157,4 +157,18 @@ struct Kalman
 
 extern Kalman kalmanRoll;
 extern Kalman kalmanPitch;
+
+// Estados
+extern float z;          // Altitud medida [m]
+extern float dz;         // Velocidad vertical medida [m/s]
+extern float z_ref;      // Altitud deseada [m]
+extern float integral_z; // Integral del error de altitud
+
+// Control
+extern float T; // Empuje total deseado
+
+// Declare global variables
+extern float vel_z;
+extern float error_z;
+
 #endif // VARIABLES_H

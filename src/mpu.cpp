@@ -2,15 +2,23 @@
 #include <Wire.h>
 #include <ESP32Servo.h>
 #include "I2Cdev.h"
-#include <VL53L0X.h>
 #include "variables.h"
 #include "mpu.h"
 #include "piloto_mode.h"
+#include <VL53L0X.h>
 
+// Pines I2C para cada sensor
 #define SDA_MPU 21
 #define SCL_MPU 22
 #define SDA_TOF 4
 #define SCL_TOF 5
+
+// Crear segundo bus I2C
+TwoWire I2C_TOF = TwoWire(1);
+VL53L0X sensor;
+
+// Declare z as a global variable
+float z = 0.0;
 
 // Función para el filtro de Kalman (roll)
 double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
@@ -75,7 +83,7 @@ void gyro_signals(void)
   int16_t GyroX = Wire.read() << 8 | Wire.read();
   int16_t GyroY = Wire.read() << 8 | Wire.read();
   int16_t GyroZ = Wire.read() << 8 | Wire.read();
-  
+
   gyroRateRoll = (float)GyroX / 131.0;
   gyroRatePitch = (float)GyroY / 131.0;
   RateYaw = (float)GyroZ / 131.0;
@@ -98,6 +106,7 @@ void gyro_signals(void)
   // Actualización del filtro de Kalman para cada eje
   AngleRoll = Kalman_filter(kalmanRoll, accAngleRoll, gyroRateRoll_local, dt);
   AnglePitch = Kalman_filter(kalmanPitch, accAnglePitch, gyroRatePitch_local, dt);
+  z = sensor.readRangeContinuousMillimeters();
 }
 
 void setupMPU()
@@ -107,7 +116,6 @@ void setupMPU()
   Wire.setClock(400000);        // Set I2C clock speed to 400kHz
   accelgyro.initialize();
   delay(20); // Añade esto
-  calibrateSensors();
   if (!accelgyro.testConnection())
   {
     Serial.println("Error: No se pudo conectar con el MPU6050.");
