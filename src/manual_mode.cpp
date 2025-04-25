@@ -142,18 +142,19 @@ void loop_manual_mode(void)
   float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
   float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
-  tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
-  tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
-  tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi + Kc_at[2][5] * x_c[5];
+  // Actualizar integrales
+  x_i[0] += error_phi * dt;
+  x_i[1] += error_theta * dt;
+  x_i[2] += error_psi * dt;
 
   error_phi = phi_ref - x_c[0];
   error_theta = theta_ref - x_c[1];
   error_psi = psi_ref - 0;
 
-  tau_x -= Ki_at[0][0] * x_i[0];
-  tau_y -= Ki_at[1][1] * x_i[1];
-  tau_z -= Ki_at[2][2] * x_i[2];
+  // Control LQR
+  tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * gyroRateRoll + DesiredAngleRoll;
+  tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * gyroRatePitch + DesiredAnglePitch;
+  tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * RateYaw + DesiredRateYaw;
 
-  // Aplicar a los motores
   applyControl(tau_x, tau_y, tau_z);
 }
