@@ -83,8 +83,8 @@ float complementaryAnglePitch = 0.0f;
 volatile float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
 
 // Variables de estado
-volatile float phi_ref = -1.5;
-volatile float theta_ref = 1.5;
+volatile float phi_ref = 0.0;
+volatile float theta_ref = 0.0;
 volatile float psi_ref = 0.0;
 volatile float integral_phi;
 volatile float integral_theta;

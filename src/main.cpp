@@ -212,9 +212,9 @@ void prepareAndPublishMessages()
 
     // Giroscopio
     JsonDocument gyroDoc;
-    gyroDoc["GyroXdps"] = GyroXdps;
-    gyroDoc["GyroYdps"] = GyroYdps;
-    gyroDoc["GyroZdps"] = GyroZdps;
+    gyroDoc["tau_x"] = tau_x;
+    gyroDoc["tau_y"] = tau_y;
+    gyroDoc["tau_z"] = tau_z;
     char gyroBuffer[200];
     size_t gyroLen = serializeJson(gyroDoc, gyroBuffer);
     client.publish(mqtt_topic_gyro, gyroBuffer, gyroLen);
@@ -223,12 +223,12 @@ void prepareAndPublishMessages()
     JsonDocument kalmanDoc;
     kalmanDoc["KalmanAngleRoll"] = AngleRoll;
     kalmanDoc["KalmanAnglePitch"] = AnglePitch;
-    kalmanDoc["complementaryAngleRoll"] = integral_phi;
-    kalmanDoc["complementaryAnglePitch"] = integral_theta;
-    kalmanDoc["InputThrottle"] = error_phi;
-    kalmanDoc["InputRoll"] = error_theta;
-    kalmanDoc["InputPitch"] = tau_x;
-    kalmanDoc["InputYaw"] = tau_y;
+    kalmanDoc["error_phi"] = error_phi;
+    kalmanDoc["error_theta"] = error_theta;
+    kalmanDoc["InputThrottle"] = InputThrottle;
+    kalmanDoc["InputRoll"] = DesiredAngleRoll;
+    kalmanDoc["InputPitch"] = DesiredAnglePitch;
+    kalmanDoc["InputYaw"] = DesiredRateYaw;
     char kalmanBuffer[800];
     size_t kalmanLen = serializeJson(kalmanDoc, kalmanBuffer);
     client.publish(mqtt_topic_kalman, kalmanBuffer, kalmanLen);
@@ -239,6 +239,7 @@ void prepareAndPublishMessages()
     motorsDoc["MotorInput2"] = MotorInput2;
     motorsDoc["MotorInput3"] = MotorInput3;
     motorsDoc["MotorInput4"] = MotorInput4;
+    motorsDoc["Altura"] = T;
     char motorsBuffer[200];
     size_t motorsLen = serializeJson(motorsDoc, motorsBuffer);
     client.publish(mqtt_topic_motors, motorsBuffer, motorsLen);
