@@ -74,8 +74,6 @@ volatile float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
 volatile float InputRoll, InputThrottle, InputPitch, InputYaw;
 volatile float DesiredAngleRoll, DesiredAnglePitch;
 volatile float ErrorAngleRoll, ErrorAnglePitch;
-volatile float PrevErrorAngleRoll, PrevErrorAnglePitch;
-volatile float PrevItermAngleRoll, PrevItermAnglePitch;
 
 float complementaryAngleRoll = 0.0f;
 float complementaryAnglePitch = 0.0f;
