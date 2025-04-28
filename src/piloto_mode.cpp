@@ -5,87 +5,69 @@
 #include <ESP32Servo.h>
 #include <piloto_mode.h>
 #include "variables.h"
+#include <esp_task_wdt.h>
 #include "mpu.h"
 #include "motores.h"
 
+// Define T as a global variable
+float T = 0.0;
+
+// Variable to track MPU calibration status
+bool mpu_ready = false;
+
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {17.3205, 0, 0},
-    {0, 17.3205, 0},
-    {0, 0, 3.873}};
+    {15.1623, 0, 0},
+    {0, 15.1623, 0},
+    {0, 0, 1.87}};
 
 const float Kc_at[3][6] = {
-    {4.8651, 0, 0, 0.6804, 0, 0},
-    {0, 4.8651, 0, 0, 0.6804, 0},
-    {0, 0, 3.1383, 0, 0, 1.2069}};
+    {4.3882, 0, 0, 3.2, 0, 0},
+    {0, 4.4022, 0, 0, 3.2, 0},
+    {0, 0, 1.97864, 0, 0, 0.00}};
 
 // === SETUP INICIAL ===
 void setup_pilote_mode()
 {
+    pinMode(pinLed, OUTPUT);
+    digitalWrite(pinLed, HIGH);
+    delay(50);
     Serial.begin(115200);
     Serial.println("Iniciando modo pilote...");
-    Wire.begin();
-    pinMode(pinLed, OUTPUT);
-    accelgyro.initialize();
-    calibrateSensors();
     setupMotores();
     Serial.println("Setup completado.");
+    digitalWrite(pinLed, LOW);
 }
-
-// === LOOP CON CONTROL LQR ===
 void loop_pilote_mode()
 {
-    // === Calcular errores actuales ===
-    float error_phi = phi_ref - AngleRoll;
-    float error_theta = theta_ref - AnglePitch;
-    float error_psi = psi_ref - AngleYaw;
-
-    // Actualizar términos integrales con anti-windup
-    integral_phi = constrain(integral_phi + error_phi * DT, -50, 50);
-    integral_theta = constrain(integral_theta + error_theta * DT, -50, 50);
-    integral_psi = constrain(integral_psi + error_psi * DT, -50, 50);
-
-    // Estado del sistema
+    // Estado actual
     float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
-    float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
-    // Calcular señales de control u = -Kc*x_c - Ki*x_i
-    float tau_x = 0, tau_y = 0, tau_z = 0;
+    // Calcular error
+    error_phi = phi_ref - x_c[0];
+    error_theta = theta_ref - x_c[1];
+    error_psi = psi_ref - x_c[2];  // <- esto estaba mal
 
-    for (int j = 0; j < 6; j++)
-    {
-        tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi + Kc_at[0][3] * gyroRateRoll;
-        tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta + Kc_at[1][4] * gyroRatePitch;
-        tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi + Kc_at[2][5] * RateYaw;
-    }
+    // Actualizar integrales (anti-windup simple con límite)
+    integral_phi += error_phi * dt;
+    integral_theta += error_theta * dt;
+    integral_psi += error_psi * dt;
 
-    tau_x -= Ki_at[0][0] * x_i[0];
-    tau_y -= Ki_at[1][1] * x_i[1];
-    tau_z -= Ki_at[2][2] * x_i[2];
+    const float lim = 10.0;
+    integral_phi = constrain(integral_phi, -lim, lim);
+    integral_theta = constrain(integral_theta, -lim, lim);
+    integral_psi = constrain(integral_psi, -lim, lim);
 
-    // Aplicar a los motores
+    // Control LQR con integral
+    tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
+    tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
+    tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi + Kc_at[2][5] * x_c[5];
+
+    // Empuje general (si tu controlador de altitud lo fija así)
+    InputThrottle = 1500;
+
+    // Aplicar a motores
     applyControl(tau_x, tau_y, tau_z);
-}
-
-// === CONTROL A LOS MOTORES ===
-void applyControl(float tau_x, float tau_y, float tau_z)
-{
-    float pwm1 = 1350 - tau_x - tau_y - tau_z;
-    float pwm2 = 1350 - tau_x + tau_y + tau_z;
-    float pwm3 = 1350 + tau_x + tau_y - tau_z;
-    float pwm4 = 1350 + tau_x - tau_y + tau_z;
-
-    // Limitar valores PWM
-    MotorInput1 = constrain(pwm1, 1000, 2000);
-    MotorInput2 = constrain(pwm2, 1000, 2000);
-    MotorInput3 = constrain(pwm3, 1000, 2000);
-    MotorInput4 = constrain(pwm4, 1000, 2000);
-
-    // Enviar señales
-    mot1.writeMicroseconds(round(MotorInput1));
-    mot2.writeMicroseconds(round(MotorInput2));
-    mot3.writeMicroseconds(round(MotorInput3));
-    mot4.writeMicroseconds(round(MotorInput4));
 }
 
 // === CALIBRACIÓN DEL MPU6050 ===
