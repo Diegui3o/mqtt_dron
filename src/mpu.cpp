@@ -77,9 +77,13 @@ void gyro_signals(void)
   int16_t GyroY = Wire.read() << 8 | Wire.read();
   int16_t GyroZ = Wire.read() << 8 | Wire.read();
 
-  gyroRateRoll = (float)GyroX / 131.0;
-  gyroRatePitch = (float)GyroY / 131.0;
-  RateYaw = (float)GyroZ / 131.0;
+  GyroX = GyroX / 131.0;
+  GyroY = GyroY / 131.0;
+  GyroZ = GyroZ / 131.0;
+
+  gyroRateRoll = GyroX + 0.56;
+  gyroRatePitch = GyroY - 2;
+  RateYaw = GyroZ + 0.79;
 
   AccX = (float)AccXLSB / 16384;
   AccY = (float)AccYLSB / 16384;

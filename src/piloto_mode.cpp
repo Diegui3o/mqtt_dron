@@ -17,14 +17,18 @@ bool mpu_ready = false;
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {15.1623, 0, 0},
-    {0, 15.1623, 0},
+    {8.1623, 0, 0},
+    {0, 8.1623, 0},
     {0, 0, 1.87}};
 
 const float Kc_at[3][6] = {
-    {4.3882, 0, 0, 3.2, 0, 0},
-    {0, 4.4022, 0, 0, 3.2, 0},
-    {0, 0, 1.97864, 0, 0, 0.00}};
+    {10.3882, 0, 0, 0.2, 0, 0},
+    {0, 10.4022, 0, 0, 0.2, 0},
+    {0, 0, 1.97864, 0, 0, 0.10}};
+
+// === Matrices LQR para altitud ===
+const float Ki_alt = 31.6228;
+const float Kc_alt[2] = {28.8910, 10.5624};
 
 // === SETUP INICIAL ===
 void setup_pilote_mode()
@@ -38,35 +42,30 @@ void setup_pilote_mode()
     Serial.println("Setup completado.");
     digitalWrite(pinLed, LOW);
 }
+
+// === LOOP CON CONTROL LQR ===
 void loop_pilote_mode()
 {
-    // Estado actual
+    // Estado del sistema
     float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
+    float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
-    // Calcular error
     error_phi = phi_ref - x_c[0];
     error_theta = theta_ref - x_c[1];
-    error_psi = psi_ref - x_c[2];  // <- esto estaba mal
+    error_psi = psi_ref - x_c[2];
+    
+    // Actualizar integrales
+    x_i[0] += error_phi * dt;
+    x_i[1] += error_theta * dt;
+    x_i[2] += error_psi * dt;
 
-    // Actualizar integrales (anti-windup simple con límite)
-    integral_phi += error_phi * dt;
-    integral_theta += error_theta * dt;
-    integral_psi += error_psi * dt;
-
-    const float lim = 10.0;
-    integral_phi = constrain(integral_phi, -lim, lim);
-    integral_theta = constrain(integral_theta, -lim, lim);
-    integral_psi = constrain(integral_psi, -lim, lim);
-
-    // Control LQR con integral
+    // Control LQR
     tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
     tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
-    tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi + Kc_at[2][5] * x_c[5];
+    tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
 
-    // Empuje general (si tu controlador de altitud lo fija así)
-    InputThrottle = 1500;
+    InputThrottle = 1500; // Empuje total calculado por el controlador de altitud
 
-    // Aplicar a motores
     applyControl(tau_x, tau_y, tau_z);
 }
 
