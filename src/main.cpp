@@ -286,11 +286,4 @@ void loop()
     client.loop();
 
     gyro_signals();
-
-    unsigned long currentTime = millis();
-    if (currentTime - lastPublishTime >= publishInterval)
-    {
-        lastPublishTime = currentTime;
-        prepareAndPublishMessages();
-    }
 }
