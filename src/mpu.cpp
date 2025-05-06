@@ -13,6 +13,12 @@
 #define SDA_TOF 4
 #define SCL_TOF 5
 
+void updateTime() {
+  now = micros();
+  dt = (now - last_time) / 1e6; // convierte a segundos
+  last_time = now;              // Actualiza last_time
+}
+
 // Función para el filtro de Kalman (roll)
 double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
 {

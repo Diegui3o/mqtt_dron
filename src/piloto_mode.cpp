@@ -26,10 +26,6 @@ const float Kc_at[3][6] = {
     {0, 10.4022, 0, 0, 0.2, 0},
     {0, 0, 1.97864, 0, 0, 0.10}};
 
-// === Matrices LQR para altitud ===
-const float Ki_alt = 31.6228;
-const float Kc_alt[2] = {28.8910, 10.5624};
-
 // === SETUP INICIAL ===
 void setup_pilote_mode()
 {
@@ -46,27 +42,41 @@ void setup_pilote_mode()
 // === LOOP CON CONTROL LQR ===
 void loop_pilote_mode()
 {
-    // Estado del sistema
+    // 1. Estados
     float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
-    float x_i[3] = {integral_phi, integral_theta, integral_psi};
+    static float x_i[3] = {0.0, 0.0, 0.0};
 
-    error_phi = phi_ref - x_c[0];
-    error_theta = theta_ref - x_c[1];
-    error_psi = psi_ref - x_c[2];
-    
-    // Actualizar integrales
-    x_i[0] += error_phi * dt;
-    x_i[1] += error_theta * dt;
-    x_i[2] += error_psi * dt;
+    // 2. Errores
+    float error_phi = phi_ref - x_c[0];
+    float error_theta = theta_ref - x_c[1];
+    float error_psi = psi_ref - x_c[2];
 
-    // Control LQR
-    tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
-    tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
-    tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
+    // 3. Integrales con anti-windup
+    if (abs(error_phi) < 1.0)
+        x_i[0] += error_phi * dt;
+    if (abs(error_theta) < 1.0)
+        x_i[1] += error_theta * dt;
+    if (abs(error_psi) < 1.0)
+        x_i[2] += error_psi * dt;
 
-    InputThrottle = 1500; // Empuje total calculado por el controlador de altitud
+    // 4. Control LQR
+    tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
+    tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
+    tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
 
+    // 5. Saturación de torques
+    tau_x = constrain(tau_x, -400, 400);
+    tau_y = constrain(tau_y, -400, 400);
+    tau_z = constrain(tau_z, -400, 400);
+
+    // 6. Empuje
+    InputThrottle = 1500; // Aún estático, podría venir de controlador de altitud
+
+    // 7. Aplicar al mezclador de motores
     applyControl(tau_x, tau_y, tau_z);
+
+    // 8. Watchdog
+    esp_task_wdt_reset();
 }
 
 // === CALIBRACIÓN DEL MPU6050 ===

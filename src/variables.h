@@ -90,9 +90,6 @@ extern float complementaryAnglePitch;
 
 extern volatile float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
 
-// Matriz de covarianza del error
-extern float dt; // Paso de tiempo (ajustar según la frecuencia de muestreo, variable)
-
 // Use TIME_STEP for macro-defined time step
 extern float Q_angle; // Covarianza del ruido del proceso (ángulo)
 extern float Q_gyro;  // Covarianza del ruido del proceso (giroscopio)
@@ -146,7 +143,9 @@ extern double R_measure;
 extern double angle, bias, rate;
 extern double P[2][2];
 
-extern unsigned long lastTime;
+extern unsigned long last_time;
+extern unsigned long now;
+extern float dt;
 
 struct Kalman
 {
