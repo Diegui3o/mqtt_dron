@@ -100,6 +100,7 @@ float residual_history_pitch[window_size] = {0};
 int residual_index_roll, residual_index_pitch;
 float R_angle_roll, R_angle_pitch;
 float lambda_roll, lambda_pitch;
+float T = 0.0;
 
 // === Configuración del sistema ===
 const uint16_t LOOP_FREQ = 100;               // Frecuencia del loop en Hz

@@ -8,69 +8,69 @@
 #include <esp_task_wdt.h>
 #include "mpu.h"
 #include "motores.h"
+#include "QuadcopterLQI.h"
 
-// Define T as a global variable
-float T = 0.0;
+// Declaración de la variable global
+unsigned long lastMicros = 0; // Inicializar con 0
 
-// Variable to track MPU calibration status
-bool mpu_ready = false;
+QuadcopterLQI *lqiControllerPilot = nullptr;
 
-// === Matrices LQR ===
-const float Ki_at[3][3] = {
-    {15.1623, 0, 0},
-    {0, 15.1623, 0},
-    {0, 0, 1.87}};
-
-const float Kc_at[3][6] = {
-    {7.3882, 0, 0, 3.2, 0, 0},
-    {0, 7.4022, 0, 0, 3.2, 0},
-    {0, 0, 1.97864, 0, 0, 0.00}};
-
-// === SETUP INICIAL ===
 void setup_pilote_mode()
 {
     pinMode(pinLed, OUTPUT);
     digitalWrite(pinLed, HIGH);
     delay(50);
     Serial.begin(115200);
-    Serial.println("Iniciando modo pilote...");
+    Serial.println("Iniciando modo piloto...");
     setupMotores();
+
+    if (lqiControllerPilot == nullptr)
+    {
+        lqiControllerPilot = new QuadcopterLQI(ControlMode::MIMO);
+        lqiControllerPilot->init();
+    }
+
     Serial.println("Setup completado.");
     digitalWrite(pinLed, LOW);
+
+    // Inicializar tiempo para dt
+    lastMicros = micros();
 }
 
-// === LOOP CON CONTROL LQR ===
 void loop_pilote_mode()
 {
-    // Estado del sistema
-    float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
-    float x_i[3] = {integral_phi, integral_theta, integral_psi};
+    double now = micros();
+    double dt = (now - lastMicros) / 1e6;
+    lastMicros = now;
+    if (dt <= 0.0 || dt > 0.2)
+    {
+        dt = 0.01; // valor por defecto de 10 ms
+    }
 
-    error_phi = phi_ref - x_c[0];
-    error_theta = theta_ref - x_c[1];
-    error_psi = psi_ref - 0;
+    // Calcular errores
+    error_phi = phi_ref - AngleRoll;
+    error_theta = theta_ref - AnglePitch;
+    error_psi = psi_ref - AngleYaw;
 
-    // Actualizar integrales
-    x_i[0] += error_phi * dt;
-    x_i[1] += error_theta * dt;
-    x_i[2] += error_psi * dt;
+    float state[9] = {
+        error_phi, error_theta, error_psi,
+        gyroRateRoll, gyroRatePitch, RateYaw,
+        integral_phi, integral_theta, integral_psi};
 
-    x_i[0] = constrain(integral_phi, -1.5, 1.5);
-    x_i[1] = constrain(integral_theta, -1.5, 1.5);
-    x_i[2] = constrain(integral_psi, -1.5, 1.5);
+    lqiControllerPilot->update(state, dt);
 
-    // Control LQR
-    tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3] + 0.04 * x_c[4] * x_c[5];
-    tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4] - 0.04 * x_c[3] * x_c[5];
-    tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5] - 0 * x_c[3] * x_c[4];
+    float controlOutputs[3];
+    lqiControllerPilot->getControlOutputs(controlOutputs);
 
-    // Actualizar integrales
-    tau_x -= Ki_at[0][0] * x_i[0];
-    tau_y -= Ki_at[1][1] * x_i[1];
-    tau_z -= Ki_at[2][2] * x_i[2];
+    tau_x = controlOutputs[0];
+    tau_y = controlOutputs[1];
+    tau_z = controlOutputs[2];
+
+    integral_phi = state[6];
+    integral_theta = state[7];
+    integral_psi = state[8];
 
     InputThrottle = 1500;
-
     applyControl(tau_x, tau_y, tau_z);
 }
 

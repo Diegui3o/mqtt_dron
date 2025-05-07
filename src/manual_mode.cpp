@@ -7,17 +7,12 @@
 #include "mpu.h"
 #include "manual_mode.h"
 #include "motores.h"
+// Modificaciones a manual_mode.cpp
 
-// === Matrices LQR ===
-const float Ki_at[3][3] = {
-    {17.1623, 0, 0},
-    {0, 17.1623, 0},
-    {0, 0, 5.3}};
+#include "QuadcopterLQI.h"
 
-const float Kc_at[3][6] = {
-    {5.3882, 0, 0, 3.2, 0, 0},
-    {0, 5.4022, 0, 0, 3.2, 0},
-    {0, 0, 5.47864, 0, 0, 3.2182}};
+// Añadir al principio del archivo
+QuadcopterLQI* lqiController = nullptr;
 
 void channelInterrupHandler()
 {
@@ -102,59 +97,80 @@ void channelInterrupHandler()
   }
 }
 
-// === SETUP INICIAL ===
-void setup_manual_mode()
-{
-  pinMode(pinLed, OUTPUT);
-  digitalWrite(pinLed, HIGH);
-  delay(50);
-  Serial.begin(115200);
-  Serial.println("Iniciando modo manual...");
-  setupMotores();
+// Modificar setup_manual_mode()
+void setup_manual_mode() {
+    pinMode(pinLed, OUTPUT);
+    digitalWrite(pinLed, HIGH);
+    delay(50);
+    Serial.begin(115200);
+    Serial.println("Iniciando modo manual...");
+    setupMotores();
+    
+    // Inicializar el controlador LQI
+    if (lqiController == nullptr) {
+        lqiController = new QuadcopterLQI(ControlMode::DECOUPLED);
+        lqiController->init();
+    }
 
-  pinMode(channel_1_pin, INPUT_PULLUP);
-  pinMode(channel_2_pin, INPUT_PULLUP);
-  pinMode(channel_3_pin, INPUT_PULLUP);
-  pinMode(channel_4_pin, INPUT_PULLUP);
-  pinMode(channel_5_pin, INPUT_PULLUP);
-  pinMode(channel_6_pin, INPUT_PULLUP);
+    pinMode(channel_1_pin, INPUT_PULLUP);
+    pinMode(channel_2_pin, INPUT_PULLUP);
+    pinMode(channel_3_pin, INPUT_PULLUP);
+    pinMode(channel_4_pin, INPUT_PULLUP);
+    pinMode(channel_5_pin, INPUT_PULLUP);
+    pinMode(channel_6_pin, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(channel_1_pin), channelInterrupHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_2_pin), channelInterrupHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_3_pin), channelInterrupHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_4_pin), channelInterrupHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_5_pin), channelInterrupHandler, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(channel_6_pin), channelInterrupHandler, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(channel_1_pin), channelInterrupHandler, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(channel_2_pin), channelInterrupHandler, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(channel_3_pin), channelInterrupHandler, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(channel_4_pin), channelInterrupHandler, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(channel_5_pin), channelInterrupHandler, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(channel_6_pin), channelInterrupHandler, CHANGE);
 
-  Serial.println("Setup completado.");
-  digitalWrite(pinLed, LOW);
+    Serial.println("Setup completado.");
+    digitalWrite(pinLed, LOW);
 }
 
-void loop_manual_mode(void)
-{
-
-  DesiredAngleRoll = 0.1 * (ReceiverValue[0] - 1500);
-  DesiredAnglePitch = 0.1 * (ReceiverValue[1] - 1500);
-  InputThrottle = ReceiverValue[2];
-  DesiredRateYaw = 0.15 * (ReceiverValue[3] - 1500);
-
-  // Estado del sistema
-  float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
-  float x_i[3] = {integral_phi, integral_theta, integral_psi};
-
-  // Actualizar integrales
-  x_i[0] += error_phi * dt;
-  x_i[1] += error_theta * dt;
-  x_i[2] += error_psi * dt;
-
-  error_phi = phi_ref - x_c[0];
-  error_theta = theta_ref - x_c[1];
-  error_psi = psi_ref - 0;
-
-  // Control LQR
-  tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * gyroRateRoll + DesiredAngleRoll;
-  tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * gyroRatePitch + DesiredAnglePitch;
-  tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * RateYaw + DesiredRateYaw;
-
-  applyControl(tau_x, tau_y, tau_z);
+// Modificar loop_manual_mode()
+void loop_manual_mode() {
+    // Leer entradas del receptor
+    DesiredAngleRoll = 0.1 * (ReceiverValue[0] - 1500);
+    DesiredAnglePitch = 0.1 * (ReceiverValue[1] - 1500);
+    InputThrottle = ReceiverValue[2];
+    DesiredRateYaw = 0.15 * (ReceiverValue[3] - 1500);
+    
+    // Establecer ángulos deseados en el controlador
+    lqiController->setDesiredAttitude(DesiredAngleRoll, DesiredAnglePitch, DesiredRateYaw);
+    
+    // Calcular errores
+    error_phi = DesiredAngleRoll - AngleRoll;
+    error_theta = DesiredAnglePitch - AnglePitch;
+    error_psi = DesiredRateYaw - RateYaw;
+    
+    // Construir vector de estado para LQI
+    // El orden debe ser: [error_roll, error_pitch, error_yaw, rate_roll, rate_pitch, rate_yaw, integral_roll, integral_pitch, integral_yaw]
+    float state[9] = {
+        error_phi, error_theta, error_psi,  // Errores de ángulo
+        gyroRateRoll, gyroRatePitch, RateYaw,  // Velocidades angulares
+        integral_phi, integral_theta, integral_psi  // Estados integrales (se actualizarán dentro del controlador)
+    };
+    
+    // Actualizar controlador LQI
+    lqiController->update(state, dt);
+    
+    // Obtener señales de control
+    float controlOutputs[3];
+    lqiController->getControlOutputs(controlOutputs);
+    
+    // Extraer señales de control
+    tau_x = controlOutputs[0];
+    tau_y = controlOutputs[1];
+    tau_z = controlOutputs[2];
+    
+    // Actualizar variables de integrador para uso en otras partes del código
+    integral_phi = state[6];
+    integral_theta = state[7];
+    integral_psi = state[8];
+    
+    // Aplicar control a los motores
+    applyControl(tau_x, tau_y, tau_z);
 }
