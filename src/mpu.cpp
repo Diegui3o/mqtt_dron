@@ -2,12 +2,11 @@
 #include <Wire.h>
 #include <ESP32Servo.h>
 #include "I2Cdev.h"
+#include <VL53L0X.h>
 #include "variables.h"
 #include "mpu.h"
 #include "piloto_mode.h"
-#include <VL53L0X.h>
 
-// Pines I2C para cada sensor
 #define SDA_MPU 21
 #define SCL_MPU 22
 #define SDA_TOF 4
@@ -77,13 +76,17 @@ void gyro_signals(void)
   int16_t GyroY = Wire.read() << 8 | Wire.read();
   int16_t GyroZ = Wire.read() << 8 | Wire.read();
 
-  gyroRateRoll = (float)GyroX / 131.0;
-  gyroRatePitch = (float)GyroY / 131.0;
-  RateYaw = (float)GyroZ / 131.0;
+  gyroRateRoll = GyroX / 131.0;
+  gyroRatePitch = GyroY / 131.0;
+  RateYaw = GyroZ / 131.0;
 
-  AccX = (float)AccXLSB / 16384;
-  AccY = (float)AccYLSB / 16384;
-  AccZ = (float)AccZLSB / 16384;
+  AccX = (float)AccXLSB / 16384.0;
+  AccY = (float)AccYLSB / 16384.0;
+  AccZ = (float)AccZLSB / 16384.0;
+
+  AccX -= AccXCalibration;
+  AccY -= AccYCalibration;
+  AccZ -= AccZCalibration;
 
   AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
   AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
@@ -107,7 +110,8 @@ void setupMPU()
   Wire.begin(SDA_MPU, SCL_MPU); // Ensure correct I2C pins are used
   Wire.setClock(400000);        // Set I2C clock speed to 400kHz
   accelgyro.initialize();
-  delay(20);
+  delay(20); // Añade esto
+  // calibrateSensors();
   if (!accelgyro.testConnection())
   {
     Serial.println("Error: No se pudo conectar con el MPU6050.");

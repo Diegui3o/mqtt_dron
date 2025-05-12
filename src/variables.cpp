@@ -8,8 +8,14 @@ float error_z = 0.0;
 MPU6050 accelgyro;
 
 volatile float RatePitch = 0.0, RateRoll = 0.0, RateYaw = 0.0;
-float RateCalibrationPitch = 0.0, RateCalibrationRoll = 0.0, RateCalibrationYaw = 0.0;
-float AccXCalibration = 0.0, AccYCalibration = 0.0, AccZCalibration = 0.0;
+
+float RateCalibrationRoll = 0.27;
+float RateCalibrationPitch = -0.85;
+float RateCalibrationYaw = -2.09;
+float AccXCalibration = 0.03;
+float AccYCalibration = 0.01;
+float AccZCalibration = -0.07;
+
 int pinLed = 2;
 
 int ESCfreq = 500;
@@ -28,7 +34,6 @@ int ax_offset, ay_offset, az_offset, gx_offset, gy_offset, gz_offset;
 
 // Variables para la calibración
 uint32_t LoopTimer;
-float t = 0.004;
 
 Servo mot1;
 Servo mot2;
@@ -74,6 +79,8 @@ volatile float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
 volatile float InputRoll, InputThrottle, InputPitch, InputYaw;
 volatile float DesiredAngleRoll, DesiredAnglePitch;
 volatile float ErrorAngleRoll, ErrorAnglePitch;
+volatile float PrevErrorAngleRoll, PrevErrorAnglePitch;
+volatile float PrevItermAngleRoll, PrevItermAnglePitch;
 
 float complementaryAngleRoll = 0.0f;
 float complementaryAnglePitch = 0.0f;
@@ -100,7 +107,6 @@ float residual_history_pitch[window_size] = {0};
 int residual_index_roll, residual_index_pitch;
 float R_angle_roll, R_angle_pitch;
 float lambda_roll, lambda_pitch;
-float T = 0.0;
 
 // === Configuración del sistema ===
 const uint16_t LOOP_FREQ = 100;               // Frecuencia del loop en Hz
@@ -112,7 +118,7 @@ float residual_history[window_size] = {0};
 int residual_index = 0;
 float c_threshold = 0.01;
 
-float dt = 0.02;        // Paso de tiempo (ajustar según la frecuencia de muestreo)
+float dt = 0.003;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
 float Q_angle = 0.001f; // Covarianza del ruido del proceso (ángulo)
 float Q_gyro = 0.003;   // Covarianza del ruido del proceso (giroscopio)
 float R_angle = 0.03;   // Covarianza del ruido de medición (acelerómetro)
