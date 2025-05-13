@@ -2,22 +2,19 @@
 #include <Wire.h>
 #include <ESP32Servo.h>
 #include "I2Cdev.h"
+#include <VL53L0X.h>
 #include "variables.h"
 #include "mpu.h"
 #include "piloto_mode.h"
-#include <VL53L0X.h>
+#include <QMC5883LCompass.h>
 
-// Pines I2C para cada sensor
+QMC5883LCompass compass;
+
+int yawOffset = 0;
 #define SDA_MPU 21
 #define SCL_MPU 22
 #define SDA_TOF 4
 #define SCL_TOF 5
-
-void updateTime() {
-  now = micros();
-  dt = (now - last_time) / 1e6; // convierte a segundos
-  last_time = now;              // Actualiza last_time
-}
 
 // Función para el filtro de Kalman (roll)
 double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
@@ -83,17 +80,17 @@ void gyro_signals(void)
   int16_t GyroY = Wire.read() << 8 | Wire.read();
   int16_t GyroZ = Wire.read() << 8 | Wire.read();
 
-  GyroX = GyroX / 131.0;
-  GyroY = GyroY / 131.0;
-  GyroZ = GyroZ / 131.0;
-
-  gyroRateRoll = GyroX + 0.56;
-  gyroRatePitch = GyroY - 2;
-  RateYaw = GyroZ + 0.79;
+  gyroRateRoll = GyroX / 131.0;
+  gyroRatePitch = GyroY / 131.0;
+  RateYaw = GyroZ / 131.0;
 
   AccX = (float)AccXLSB / 16384;
   AccY = (float)AccYLSB / 16384;
   AccZ = (float)AccZLSB / 16384;
+
+  AccX -= AccXCalibration;
+  AccY -= AccYCalibration;
+  AccZ -= AccZCalibration;
 
   AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
   AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
@@ -111,20 +108,60 @@ void gyro_signals(void)
   AnglePitch = Kalman_filter(kalmanPitch, accAnglePitch, gyroRatePitch_local, dt);
 }
 
+void loop_yaw()
+{
+  compass.read();
+  int x = compass.getX();
+  int y = compass.getY();
+  int z = compass.getZ();
+
+  // Check if the compass is responding
+  if (x == 0 && y == 0 && z == 0)
+  {
+    Serial.println("Compass not responding. Reinitializing...");
+    compass.init();
+    compass.setMode(0x01, 0x0C, 0x10, 0x00); // Continuous mode, 10Hz, 8G range
+    return;                                  // Skip the rest of the loop to allow reinitialization
+  }
+
+  int heading = compass.getAzimuth();
+  int yaw = heading - yawOffset;
+
+  if (yaw > 180)
+    yaw -= 360;
+  if (yaw < -180)
+    yaw += 360;
+
+  AngleYaw = Kalman_filter(kalmanYaw, yaw, RateYaw, dt);
+}
+
 void setupMPU()
 {
-  Serial.println("Iniciando sensores...");
-  Wire.begin(SDA_MPU, SCL_MPU); // Ensure correct I2C pins are used
-  Wire.setClock(400000);        // Set I2C clock speed to 400kHz
+  Serial.begin(115200);
+  Wire.begin();
+
+  // Initialize the compass
+  compass.init();
+  Serial.println("Compass initialized.");
+  compass.setMode(0x01, 0x0C, 0x10, 0x00); // Continuous mode, 10Hz, 8G range
+
+  // Initialize the MPU6050
   accelgyro.initialize();
-  delay(20);
   if (!accelgyro.testConnection())
   {
     Serial.println("Error: No se pudo conectar con el MPU6050.");
     while (true)
     {
-      delay(1000); // Halt execution if the sensor is not connected
+      delay(1000);
     }
   }
   Serial.println("MPU6050 conectado correctamente.");
+
+  delay(2000);
+  compass.read();
+  delay(20);
+  yawOffset = compass.getAzimuth();
+  Serial.print("Calibrado. Dirección inicial = ");
+  Serial.print(yawOffset);
+  Serial.println("° (ahora es yaw = 0°)");
 }

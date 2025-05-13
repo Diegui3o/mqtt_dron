@@ -10,14 +10,14 @@
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {17.1623, 0, 0},
-    {0, 17.1623, 0},
-    {0, 0, 5.3}};
+    {10.00, 0, 0},
+    {0, 10.00, 0},
+    {0, 0, 3.162}};
 
 const float Kc_at[3][6] = {
-    {5.3882, 0, 0, 3.2, 0, 0},
-    {0, 5.4022, 0, 0, 3.2, 0},
-    {0, 0, 5.47864, 0, 0, 3.2182}};
+    {6.4879, 0, 0, 3.209, 0, 0},
+    {0, 6.4959, 0, 0, 3.219, 0},
+    {0, 0, 2.97864, 0, 0, 0.20}};
 
 void channelInterrupHandler()
 {
@@ -110,7 +110,6 @@ void setup_manual_mode()
   delay(50);
   Serial.begin(115200);
   Serial.println("Iniciando modo manual...");
-  setupMotores();
 
   pinMode(channel_1_pin, INPUT_PULLUP);
   pinMode(channel_2_pin, INPUT_PULLUP);
@@ -130,7 +129,7 @@ void setup_manual_mode()
   digitalWrite(pinLed, LOW);
 }
 
-void loop_manual_mode(void)
+void loop_manual_mode(float dt)
 {
 
   DesiredAngleRoll = 0.1 * (ReceiverValue[0] - 1500);
@@ -142,19 +141,27 @@ void loop_manual_mode(void)
   float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
   float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
+  // Control LQR
+  tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * gyroRateRoll;
+  tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * gyroRatePitch;
+  tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * RateYaw;
+
+  error_phi = phi_ref - x_c[0];
+  error_theta = theta_ref - x_c[1];
+  error_psi = psi_ref - x_c[2];
+
   // Actualizar integrales
   x_i[0] += error_phi * dt;
   x_i[1] += error_theta * dt;
   x_i[2] += error_psi * dt;
 
-  error_phi = phi_ref - x_c[0];
-  error_theta = theta_ref - x_c[1];
-  error_psi = psi_ref - 0;
-
-  // Control LQR
-  tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * gyroRateRoll + DesiredAngleRoll;
-  tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * gyroRatePitch + DesiredAnglePitch;
-  tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * RateYaw + DesiredRateYaw;
-
-  applyControl(tau_x, tau_y, tau_z);
+  if (InputThrottle > 1050)
+  {
+    applyControl(tau_x, tau_y, tau_z);
+  }
+  else
+  {
+    applyControl(0, 0, 0);
+    apagarMotores();
+  }
 }

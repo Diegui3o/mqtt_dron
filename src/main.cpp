@@ -153,7 +153,15 @@ void TaskControlCode(void *pvParameters)
             {
             case 0:
                 Serial.println("Modo piloto");
+                Serial.begin(115200);
+                pinMode(pinLed, OUTPUT);
+                digitalWrite(pinLed, HIGH);
+                Wire.begin();
+                channelInterrupHandler();
+                setupMotores();
                 setup_pilote_mode();
+                LoopTimer = micros();
+                digitalWrite(pinLed, LOW);
                 break;
             case 1:
                 Serial.println("Modo seguro");
@@ -161,7 +169,14 @@ void TaskControlCode(void *pvParameters)
                 break;
             case 2:
                 Serial.println("Modo manual");
+                Serial.begin(115200);
+                pinMode(pinLed, OUTPUT);
+                digitalWrite(pinLed, HIGH);
+                Wire.begin();
+                setupMotores();
                 setup_manual_mode();
+                LoopTimer = micros();
+                digitalWrite(pinLed, LOW);
                 break;
             default:
                 break;
@@ -170,11 +185,27 @@ void TaskControlCode(void *pvParameters)
 
         if (modoActual == 0)
         {
-            loop_pilote_mode();
+            static uint32_t last_time = 0;
+            float dt = (micros() - last_time) / 1e6;
+            if (dt < 0.002)
+                return; // Esperar a 2ms (500Hz)
+
+            // 2. Ejecutar LQR
+            loop_pilote_mode(dt);
+
+            last_time = micros();
         }
         if (modoActual == 2)
         {
-            loop_manual_mode();
+            static uint32_t last_time = 0;
+            float dt = (micros() - last_time) / 1e6;
+            if (dt < 0.002)
+                return; // Esperar a 2ms (500Hz)
+
+            // 2. Ejecutar LQR
+            loop_manual_mode(dt);
+
+            last_time = micros();
         }
 
         vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -286,4 +317,12 @@ void loop()
     client.loop();
 
     gyro_signals();
+    loop_yaw();
+
+    unsigned long currentTime = millis();
+    if (currentTime - lastPublishTime >= publishInterval)
+    {
+        lastPublishTime = currentTime;
+        prepareAndPublishMessages();
+    }
 }
