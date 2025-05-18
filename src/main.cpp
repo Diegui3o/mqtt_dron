@@ -11,11 +11,16 @@
 #include <esp_task_wdt.h>
 #include "manual_mode.h"
 
-// ================= VARIABLES =================
+// ================= DEFINICIÓN DE MODOS =================
+#define MODO_PILOTO_AUTOMATICO 0
+#define MODO_ESPERA 1
+#define MODO_MANUAL 2
+
+// ================= VARIABLES GLOBALES =================
+volatile int modoActual = MODO_ESPERA;
+volatile bool modoCambiado = false;
 volatile bool ledState = false;
 volatile bool motorState = false;
-volatile int modoActual = 1;
-volatile bool modoCambiado = false;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -23,67 +28,116 @@ Preferences preferences;
 TaskHandle_t TaskControl;
 
 unsigned long lastPublishTime = 0;
-const int publishInterval = 30; // ms
+const int publishInterval = 30;
+bool motoresHabilitados = false;
+bool wifiConnected = false;
+bool mqttConnected = false;
+unsigned long lastReconnectAttempt = 0;
+const unsigned long reconnectInterval = 5000;
 
 // ================= FUNCIONES =================
 void setup_wifi();
-void reconnect();
+bool reconnectMQTT();
 void callback(char *topic, byte *payload, unsigned int length);
 void handleControlMessage(const String &message);
 void handleModeMessage(const String &message);
 void TaskControlCode(void *pvParameters);
 void prepareAndPublishMessages();
+void TaskGyroAndData(void *pvParameters);
+void safeDelay(unsigned long ms);
 
 void setup_wifi()
 {
     Serial.print("Conectando a ");
     Serial.println(ssid);
+
+    WiFi.disconnect(true);
+    delay(100);
     WiFi.begin(ssid, password);
-    WiFi.setSleep(true);
-    while (WiFi.status() != WL_CONNECTED)
+    WiFi.setSleep(false); // Deshabilitar sleep para mejor estabilidad
+
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000)
     {
-        delay(500);
+        delay(250);
         Serial.print(".");
     }
-    Serial.println("\n✅ WiFi conectado. IP: " + WiFi.localIP().toString());
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        wifiConnected = true;
+        Serial.println("\n✅ WiFi conectado. IP: " + WiFi.localIP().toString());
+    }
+    else
+    {
+        wifiConnected = false;
+        Serial.println("\n❌ Fallo conexión WiFi");
+    }
 }
 
-void reconnect()
+bool reconnectMQTT()
 {
-    while (!client.connected())
+    if (!wifiConnected || WiFi.status() != WL_CONNECTED)
     {
-        Serial.print("🔄 Intentando conexión MQTT...");
-        if (client.connect("ESP32Client"))
-        {
-            Serial.println("✅ Conectado a MQTT");
-            client.subscribe(mqtt_control);
-            client.subscribe(mqtt_topic_mode);
-        }
-        else
-        {
-            Serial.print("❌ Falló, rc=");
-            Serial.println(client.state());
-            delay(5000);
-        }
+        return false;
+    }
+
+    if (millis() - lastReconnectAttempt < reconnectInterval)
+    {
+        return false;
+    }
+
+    lastReconnectAttempt = millis();
+
+    Serial.print("🔄 Intentando conexión MQTT...");
+    if (client.connect("ESP32Client", NULL, NULL, "dron/status", 1, true, "offline"))
+    {
+        mqttConnected = true;
+        Serial.println("✅ Conectado a MQTT");
+
+        // Suscripciones con QoS 1 para mayor confiabilidad
+        client.subscribe(mqtt_control, 1);
+        client.subscribe(mqtt_topic_mode, 1);
+        client.publish("dron/status", "online", true);
+        return true;
+    }
+    else
+    {
+        mqttConnected = false;
+        Serial.print("❌ Falló, rc=");
+        Serial.println(client.state());
+        return false;
     }
 }
 
 void callback(char *topic, byte *payload, unsigned int length)
 {
-    String message;
-    for (unsigned int i = 0; i < length; i++)
-    {
-        message += (char)payload[i];
-    }
+    if (!mqttConnected)
+        return;
+
+    char *message = (char *)malloc(length + 1);
+    if (message == NULL)
+        return;
+
+    memcpy(message, payload, length);
+    message[length] = '\0';
+
+    Serial.printf("📩 Mensaje recibido en el topic '%s': %s\n", topic, message);
 
     if (strcmp(topic, mqtt_control) == 0)
     {
-        handleControlMessage(message);
+        handleControlMessage(String(message));
     }
     else if (strcmp(topic, mqtt_topic_mode) == 0)
     {
-        handleModeMessage(message);
+        handleModeMessage(String(message));
     }
+    else
+    {
+        Serial.println("⚠️ Mensaje recibido en un topic no manejado");
+    }
+
+    free(message);
 }
 
 void handleControlMessage(const String &message)
@@ -109,107 +163,115 @@ void handleControlMessage(const String &message)
 
 void handleModeMessage(const String &message)
 {
+    Serial.println("📩 Mensaje recibido en handleModeMessage: " + message);
+
     int nuevoModo = -1;
 
     if (message.charAt(0) == '{')
     {
-        JsonDocument doc;
+        StaticJsonDocument<200> doc;
         DeserializationError error = deserializeJson(doc, message);
-        if (error)
+        if (!error)
         {
-            Serial.println("⚠️ Error al analizar JSON");
-            return;
+            nuevoModo = doc["modo"];
+            Serial.printf("🔧 Modo extraído del JSON: %d\n", nuevoModo);
         }
-        nuevoModo = doc["modo"];
+        else
+        {
+            Serial.println("❌ Error al deserializar JSON");
+        }
     }
     else
     {
         nuevoModo = message.toInt();
+        Serial.printf("🔧 Modo extraído del mensaje: %d\n", nuevoModo);
     }
 
-    if (nuevoModo != modoActual && nuevoModo >= 0)
+    if (nuevoModo >= 0 && nuevoModo <= 2 && nuevoModo != modoActual)
     {
+        Serial.printf("🔄 Cambiando modo de %d a %d\n", modoActual, nuevoModo);
         modoActual = nuevoModo;
         modoCambiado = true;
         preferences.putInt("modo", modoActual);
+
+        // Notificar cambio de modo
+        String notificacion = "{\"modo\":" + String(modoActual) + ",\"status\":\"cambiado\"}";
+        client.publish("dron/notificacion", notificacion.c_str());
+    }
+    else
+    {
+        Serial.println("⚠️ Modo no válido o sin cambios");
     }
 }
 
 void TaskControlCode(void *pvParameters)
 {
     esp_task_wdt_add(NULL);
+    int modoAnterior = -1;
+    bool configuracionInicial = true;
+
     for (;;)
     {
         esp_task_wdt_reset();
 
-        digitalWrite(pinLed, ledState ? HIGH : LOW);
-        motorState ? encenderMotores(1500) : apagarMotores();
-
-        if (modoCambiado)
+        // Manejo de cambio de modo o primera configuración
+        if (configuracionInicial || modoActual != modoAnterior)
         {
-            esp_task_wdt_reset();
-            modoCambiado = false; // Resetear la bandera aquí
+            Serial.printf("🔄 Detectado cambio de modo: %d -> %d\n", modoAnterior, modoActual);
+
+            modoAnterior = modoActual;
+            configuracionInicial = false;
+
             switch (modoActual)
             {
-            case 0:
-                Serial.println("Modo piloto");
-                Serial.begin(115200);
-                pinMode(pinLed, OUTPUT);
-                digitalWrite(pinLed, HIGH);
-                Wire.begin();
-                channelInterrupHandler();
-                setupMotores();
+            case MODO_PILOTO_AUTOMATICO:
+                Serial.println("⚙️ Configurando modo piloto automático...");
                 setup_pilote_mode();
-                LoopTimer = micros();
-                digitalWrite(pinLed, LOW);
+                Serial.println("✅ Modo piloto automático configurado");
                 break;
-            case 1:
-                Serial.println("Modo seguro");
-                // Lógica del modo seguro
+
+            case MODO_ESPERA:
+                Serial.println("⚙️ Configurando modo espera...");
+                apagarMotores();
+                Serial.println("🛑 Modo espera - Sistema en standby");
                 break;
-            case 2:
-                Serial.println("Modo manual");
-                Serial.begin(115200);
-                pinMode(pinLed, OUTPUT);
-                digitalWrite(pinLed, HIGH);
-                Wire.begin();
-                channelInterrupHandler();
-                setupMotores();
+
+            case MODO_MANUAL:
+                Serial.println("⚙️ Configurando modo manual...");
                 setup_manual_mode();
-                LoopTimer = micros();
-                digitalWrite(pinLed, LOW);
+                Serial.println("🎮 Modo manual configurado");
                 break;
+
             default:
+                Serial.println("⚠️ Modo desconocido");
                 break;
             }
         }
 
-        if (modoActual == 0)
-        {
-            static uint32_t last_time = 0;
-            float dt = (micros() - last_time) / 1e6;
-            if (dt < 0.002)
-                return; // Esperar a 2ms (500Hz)
+        // Ejecución del modo actual
+        static uint32_t last_time = micros();
+        float dt = (micros() - last_time) / 1e6;
 
-            // 2. Ejecutar LQR
-            loop_pilote_mode(dt);
+        if (dt >= 0.002)
+        { // Control a 500Hz
+            switch (modoActual)
+            {
+            case MODO_PILOTO_AUTOMATICO:
+                loop_pilote_mode(dt);
+                break;
 
+            case MODO_MANUAL:
+                loop_manual_mode(dt);
+                break;
+
+            case MODO_ESPERA:
+                // No se requiere acción en modo espera
+                break;
+            }
             last_time = micros();
         }
-        if (modoActual == 2)
-        {
-            static uint32_t last_time = 0;
-            float dt = (micros() - last_time) / 1e6;
-            if (dt < 0.002)
-                return; // Esperar a 2ms (500Hz)
 
-            // 2. Ejecutar LQR
-            loop_manual_mode(dt);
-
-            last_time = micros();
-        }
-
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
@@ -280,49 +342,121 @@ void prepareAndPublishMessages()
 void setup()
 {
     Serial.begin(115200);
-    pinMode(pinLed, OUTPUT);
+    while (!Serial)
+        delay(10);
 
+    pinMode(pinLed, OUTPUT);
+    digitalWrite(pinLed, LOW);
+
+    // Configuración inicial
     preferences.begin("dronData", false);
-    modoActual = preferences.getInt("modo", 1);
+    modoActual = preferences.getInt("modo", MODO_ESPERA);
     ledState = preferences.getBool("ledState", false);
     digitalWrite(pinLed, ledState ? HIGH : LOW);
-    setCpuFrequencyMhz(160);
-    setupMPU();
 
+    // Optimización de frecuencia
+    setCpuFrequencyMhz(240);
+
+    // Inicialización segura de hardware
+    setupMPU();
+    setupMotores();
+
+    // Configuración de red mejorada
     setup_wifi();
     btStop();
     client.setServer(mqttServer, mqtt_port);
     client.setCallback(callback);
+    client.setBufferSize(2048);
+    client.setSocketTimeout(15); // Timeout más corto
 
-    esp_task_wdt_init(10, true);
+    // Configuración robusta del Watchdog
+    esp_task_wdt_init(30, true);
     esp_task_wdt_add(NULL);
 
-    xTaskCreatePinnedToCore(
-        TaskControlCode,
-        "TaskControl",
-        10000,
+    // Creación de tareas con protección
+    BaseType_t xReturned;
+    xReturned = xTaskCreatePinnedToCore(
+        TaskControlCode, "TaskControl",
+        16384,
+        NULL,
+        2,
+        &TaskControl,
+        1);
+
+    if (xReturned != pdPASS)
+    {
+        Serial.println("❌ Error creando TaskControl");
+        while (1)
+            delay(1000);
+    }
+
+    xReturned = xTaskCreatePinnedToCore(
+        TaskGyroAndData, "TaskGyroAndData",
+        12288,
         NULL,
         1,
-        &TaskControl,
-        1); // Núcleo 1
+        NULL,
+        0);
+
+    if (xReturned != pdPASS)
+    {
+        Serial.println("❌ Error creando TaskGyroAndData");
+        while (1)
+            delay(1000);
+    }
+
+    Serial.println("✅ Sistema inicializado correctamente");
 }
 
 void loop()
 {
     esp_task_wdt_reset();
 
-    if (!client.connected())
+    // Manejo mejorado de reconexión
+    if (!mqttConnected)
     {
-        reconnect();
+        reconnectMQTT();
     }
-    client.loop();
 
-    gyro_signals();
-
-    unsigned long currentTime = millis();
-    if (currentTime - lastPublishTime >= publishInterval)
+    // Procesamiento MQTT con timeout
+    unsigned long start = millis();
+    while (mqttConnected && millis() - start < 10)
     {
-        lastPublishTime = currentTime;
-        prepareAndPublishMessages();
+        client.loop();
+        delay(1);
+    }
+
+    safeDelay(5);
+}
+
+void safeDelay(unsigned long ms)
+{
+    unsigned long start = millis();
+    while (millis() - start < ms)
+    {
+        delay(1);
+        esp_task_wdt_reset();
+    }
+}
+
+void TaskGyroAndData(void *pvParameters)
+{
+    esp_task_wdt_add(NULL); // Añadir esta tarea al WDT
+
+    for (;;)
+    {
+        esp_task_wdt_reset(); // Resetear WDT también aquí
+
+        gyro_signals(); // Leer sensores
+
+        // Publicar datos con intervalo controlado
+        static uint32_t lastPubTime = 0;
+        if (millis() - lastPubTime >= publishInterval)
+        {
+            prepareAndPublishMessages();
+            lastPubTime = millis();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

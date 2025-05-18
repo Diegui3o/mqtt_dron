@@ -6,7 +6,12 @@
 #include "variables.h"
 #include "mpu.h"
 #include "piloto_mode.h"
+#include <QMC5883LCompass.h>
 
+QMC5883LCompass compass;
+
+int yawOffset = 0;
+float lastValidYaw = 0; // Nuevo: almacena el último yaw válido
 #define SDA_MPU 21
 #define SCL_MPU 22
 #define SDA_TOF 4
@@ -78,18 +83,18 @@ void gyro_signals(void)
 
   gyroRateRoll = GyroX / 131.0;
   gyroRatePitch = GyroY / 131.0;
-  RateYaw = GyroZ / 131.0;
+  RateYaw = GyroZ / 131.0 + 1.1;
 
-  AccX = (float)AccXLSB / 16384.0;
-  AccY = (float)AccYLSB / 16384.0;
-  AccZ = (float)AccZLSB / 16384.0;
+  AccX = (float)AccXLSB / 16384;
+  AccY = (float)AccYLSB / 16384;
+  AccZ = (float)AccZLSB / 16384;
 
   AccX -= AccXCalibration;
   AccY -= AccYCalibration;
   AccZ -= AccZCalibration;
 
-  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
-  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
+  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180) + 1.82;
+  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180) - 5.35;
 
   // Cálculo del ángulo estimado a partir del acelerómetro (usando atan2 puede ser más robusto)
   accAngleRoll = atan2(AccY, sqrt(AccX * AccX + AccZ * AccZ)) * 180.0 / PI;
@@ -100,25 +105,189 @@ void gyro_signals(void)
   float gyroRatePitch_local = gyroRatePitch;
 
   // Actualización del filtro de Kalman para cada eje
-  AngleRoll = Kalman_filter(kalmanRoll, accAngleRoll, gyroRateRoll_local, dt);
-  AnglePitch = Kalman_filter(kalmanPitch, accAnglePitch, gyroRatePitch_local, dt);
+  AngleRoll = Kalman_filter(kalmanRoll, AngleRoll_est, gyroRateRoll_local, dt);
+  AnglePitch = Kalman_filter(kalmanPitch, AnglePitch_est, gyroRatePitch_local, dt);
+}
+
+void loop_yaw()
+{
+  compass.read();
+  int x = compass.getX();
+  int y = compass.getY();
+  int z = compass.getZ();
+
+  // Compensación de inclinación (tilt compensation)
+  // Usa los ángulos actuales de roll y pitch en radianes
+  float roll_rad = AngleRoll * PI / 180.0;
+  float pitch_rad = AnglePitch * PI / 180.0;
+
+  // Define el umbral de inclinación permitido (en grados)
+  const float tilt_threshold = 3.0;
+
+  // Usa los ángulos filtrados por Kalman
+  if (fabs(AngleRoll) < tilt_threshold && fabs(AnglePitch) < tilt_threshold)
+  {
+    float Xh = x * cos(pitch_rad) + z * sin(pitch_rad);
+    float Yh = x * sin(roll_rad) * sin(pitch_rad) + y * cos(roll_rad) - z * sin(roll_rad) * cos(pitch_rad);
+    // Si la inclinación es pequeña, calcula yaw normalmente
+    float heading = atan2(Yh, Xh) * 180.0 / PI;
+    if (heading < 0)
+      heading += 360;
+    int yaw = heading - yawOffset;
+    if (yaw > 180)
+      yaw -= 360;
+    else if (yaw < -180)
+      yaw += 360;
+    float alpha = 0.12;
+    AngleYaw = (1 - alpha) * (AngleYaw + RateYaw * dt) + alpha * yaw;
+    lastValidYaw = AngleYaw; // Guarda el último valor válido
+  }
+  else
+  {
+    // Si la inclinación es grande, conserva el último yaw válido
+    AngleYaw = lastValidYaw;
+  }
 }
 
 void setupMPU()
 {
-  Serial.println("Iniciando sensores...");
-  Wire.begin(SDA_MPU, SCL_MPU); // Ensure correct I2C pins are used
-  Wire.setClock(400000);        // Set I2C clock speed to 400kHz
+  Serial.begin(115200);
+  Wire.begin(SDA_MPU, SCL_MPU, 100000); // 100kHz
+
+  // Initialize the compass
+  compass.init();
+  Serial.println("Compass initialized.");
+  compass.setMode(0x01, 0x0C, 0x20, 0x00); // 0x20 = 100Hz
+
+  // Initialize the MPU6050
   accelgyro.initialize();
-  delay(20); // Añade esto
   // calibrateSensors();
   if (!accelgyro.testConnection())
   {
     Serial.println("Error: No se pudo conectar con el MPU6050.");
     while (true)
     {
-      delay(1000); // Halt execution if the sensor is not connected
+      delay(1000);
     }
   }
   Serial.println("MPU6050 conectado correctamente.");
+
+  // Calcular yawOffset (promedio de 100 lecturas)
+  delay(2000);
+  compass.read();
+  delay(20);
+  yawOffset = compass.getAzimuth();
+  Serial.print("Calibrado. Dirección inicial = ");
+  Serial.print(yawOffset);
+  Serial.println("° (ahora es yaw = 0°)");
+}
+
+// === CALIBRACIÓN DEL MPU6050 ===
+void calibrateSensors()
+{
+  Serial.println("\nCalibrando sensores...");
+
+  accelgyro.setXAccelOffset(0);
+  accelgyro.setYAccelOffset(0);
+  accelgyro.setZAccelOffset(0);
+  accelgyro.setXGyroOffset(0);
+  accelgyro.setYGyroOffset(0);
+  accelgyro.setZGyroOffset(0);
+
+  meansensors();
+  Serial.println("\nCalculando offsets...");
+  calibration();
+
+  accelgyro.setXAccelOffset(ax_offset);
+  accelgyro.setYAccelOffset(ay_offset);
+  accelgyro.setZAccelOffset(az_offset);
+  accelgyro.setXGyroOffset(gx_offset);
+  accelgyro.setYGyroOffset(gy_offset);
+  accelgyro.setZGyroOffset(gz_offset);
+
+  Serial.println("Calibración completada.");
+}
+
+void meansensors()
+{
+  long i = 0, buff_ax = 0, buff_ay = 0, buff_az = 0, buff_gx = 0, buff_gy = 0, buff_gz = 0;
+  while (i < (buffersize + 101))
+  {
+    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    if (i > 100 && i <= (buffersize + 100))
+    {
+      buff_ax += ax;
+      buff_ay += ay;
+      buff_az += az;
+      buff_gx += gx;
+      buff_gy += gy;
+      buff_gz += gz;
+    }
+    i++;
+    delay(2);
+  }
+
+  mean_ax = buff_ax / buffersize;
+  mean_ay = buff_ay / buffersize;
+  mean_az = buff_az / buffersize;
+  mean_gx = buff_gx / buffersize;
+  mean_gy = buff_gy / buffersize;
+  mean_gz = buff_gz / buffersize;
+}
+
+void calibration()
+{
+  ax_offset = -mean_ax / 8;
+  ay_offset = -mean_ay / 8;
+  az_offset = (16384 - mean_az) / 8;
+
+  gx_offset = -mean_gx / 4;
+  gy_offset = -mean_gy / 4;
+  gz_offset = -mean_gz / 4;
+
+  while (1)
+  {
+    int ready = 0;
+    accelgyro.setXAccelOffset(ax_offset);
+    accelgyro.setYAccelOffset(ay_offset);
+    accelgyro.setZAccelOffset(az_offset);
+    accelgyro.setXGyroOffset(gx_offset);
+    accelgyro.setYGyroOffset(gy_offset);
+    accelgyro.setZGyroOffset(gz_offset);
+
+    meansensors();
+
+    if (abs(mean_ax) <= acel_deadzone)
+      ready++;
+    else
+      ax_offset -= mean_ax / acel_deadzone;
+
+    if (abs(mean_ay) <= acel_deadzone)
+      ready++;
+    else
+      ay_offset -= mean_ay / acel_deadzone;
+
+    if (abs(16384 - mean_az) <= acel_deadzone)
+      ready++;
+    else
+      az_offset += (16384 - mean_az) / acel_deadzone;
+
+    if (abs(mean_gx) <= giro_deadzone)
+      ready++;
+    else
+      gx_offset -= mean_gx / (giro_deadzone + 1);
+
+    if (abs(mean_gy) <= giro_deadzone)
+      ready++;
+    else
+      gy_offset -= mean_gy / (giro_deadzone + 1);
+
+    if (abs(mean_gz) <= giro_deadzone)
+      ready++;
+    else
+      gz_offset -= mean_gz / (giro_deadzone + 1);
+
+    if (ready == 6)
+      break;
+  }
 }

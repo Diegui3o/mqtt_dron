@@ -157,6 +157,7 @@ struct Kalman
 
 extern Kalman kalmanRoll;
 extern Kalman kalmanPitch;
+extern Kalman kalmanYaw;
 
 // Estados
 extern float z;          // Altitud medida [m]
@@ -170,5 +171,8 @@ extern float T; // Empuje total deseado
 // Declare global variables
 extern float vel_z;
 extern float error_z;
+
+extern float magbias[3];
+extern float magscale[3];
 
 #endif // VARIABLES_H
